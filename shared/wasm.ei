@@ -83,7 +83,7 @@ export fn check_qty(product_id: i64, qty: i64, have: i64) -> i32 uses io {
     let r = validate.qty(qty).and_then(|q: i64| -> Result[i64, shared.ShopError] { validate.stock(product_id, q, have) })
     match r {
         Ok(q) => {
-            let z = reply(wire.lit("{\"ok\":true}"))
+            let z = reply(wire.lit("{{\"ok\":true}}"))
             0
         }
         Err(e) => {

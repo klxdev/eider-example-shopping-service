@@ -15,23 +15,23 @@ fn answer(f: fn(wire.Request) -> List[u8], src: str) -> String {
 }
 
 test "quote" {
-    testing.assert_eq(answer(wire.quote, "line 1 1299 2\nline 2 450 1\n"), String.from("{\"ok\":true,\"subtotal_cents\":3048,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":251,\"total_cents\":3898,\"coupon_applied\":false}"))
-    testing.assert_eq(answer(wire.quote, "coupon save10\nline 1 5000 1"), String.from("{\"ok\":true,\"subtotal_cents\":5000,\"discount_cents\":500,\"shipping_cents\":599,\"tax_cents\":371,\"total_cents\":5470,\"coupon_applied\":true}"))
+    testing.assert_eq(answer(wire.quote, "line 1 1299 2\nline 2 450 1\n"), String.from("{{\"ok\":true,\"subtotal_cents\":3048,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":251,\"total_cents\":3898,\"coupon_applied\":false}}"))
+    testing.assert_eq(answer(wire.quote, "coupon save10\nline 1 5000 1"), String.from("{{\"ok\":true,\"subtotal_cents\":5000,\"discount_cents\":500,\"shipping_cents\":599,\"tax_cents\":371,\"total_cents\":5470,\"coupon_applied\":true}}"))
 }
 
 test "quote errors" {
-    testing.assert_eq(answer(wire.quote, "line 1 1299 0\nline 2 1 11"), String.from("{\"ok\":false,\"errors\":[{\"code\":2,\"field\":\"qty\",\"message\":\"the quantity must be 1 to 10\"},{\"code\":2,\"field\":\"qty\",\"message\":\"the quantity must be 1 to 10\"}]}"))
-    testing.assert_eq(answer(wire.quote, "coupon \"x\nline 1 1 1"), String.from("{\"ok\":false,\"errors\":[{\"code\":6,\"field\":\"code\",\"message\":\"there is no coupon \\\"X\"}]}"))
-    testing.assert_eq(answer(wire.quote, "line 1 x 1"), String.from("{\"ok\":false,\"errors\":[{\"code\":12,\"field\":\"\",\"message\":\"bad input: expected a number\"}]}"))
-    testing.assert_eq(answer(wire.quote, "line 1 99999999999999999 1"), String.from("{\"ok\":false,\"errors\":[{\"code\":1,\"field\":\"\",\"message\":\"the amount is too large\"}]}"))
-    testing.assert_eq(answer(wire.quote, "colour red"), String.from("{\"ok\":false,\"errors\":[{\"code\":12,\"field\":\"\",\"message\":\"bad input: unknown key\"}]}"))
+    testing.assert_eq(answer(wire.quote, "line 1 1299 0\nline 2 1 11"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":2,\"field\":\"qty\",\"message\":\"the quantity must be 1 to 10\"}},{{\"code\":2,\"field\":\"qty\",\"message\":\"the quantity must be 1 to 10\"}}]}}"))
+    testing.assert_eq(answer(wire.quote, "coupon \"x\nline 1 1 1"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":6,\"field\":\"code\",\"message\":\"there is no coupon \\\"X\"}}]}}"))
+    testing.assert_eq(answer(wire.quote, "line 1 x 1"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":12,\"field\":\"\",\"message\":\"bad input: expected a number\"}}]}}"))
+    testing.assert_eq(answer(wire.quote, "line 1 99999999999999999 1"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":1,\"field\":\"\",\"message\":\"the amount is too large\"}}]}}"))
+    testing.assert_eq(answer(wire.quote, "colour red"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":12,\"field\":\"\",\"message\":\"bad input: unknown key\"}}]}}"))
 }
 
 test "customer" {
-    testing.assert_eq(answer(wire.customer, "name  Ada \nemail ADA@Example.com"), String.from("{\"ok\":true,\"name\":\"Ada\",\"email\":\"ADA@example.com\"}"))
-    testing.assert_eq(answer(wire.customer, "name \nemail x"), String.from("{\"ok\":false,\"errors\":[{\"code\":9,\"field\":\"name\",\"message\":\"the name must be 1 to 80 characters\"},{\"code\":10,\"field\":\"email\",\"message\":\"the email address is not valid\"}]}"))
+    testing.assert_eq(answer(wire.customer, "name  Ada \nemail ADA@Example.com"), String.from("{{\"ok\":true,\"name\":\"Ada\",\"email\":\"ADA@example.com\"}}"))
+    testing.assert_eq(answer(wire.customer, "name \nemail x"), String.from("{{\"ok\":false,\"errors\":[{{\"code\":9,\"field\":\"name\",\"message\":\"the name must be 1 to 80 characters\"}},{{\"code\":10,\"field\":\"email\",\"message\":\"the email address is not valid\"}}]}}"))
 }
 
 test "coupon lookup" {
-    testing.assert_eq(answer(wire.coupon_lookup, "coupon take5"), String.from("{\"ok\":true,\"coupon\":{\"id\":2,\"code\":\"TAKE5\",\"description\":\"$5.00 off orders of $25.00 or more\",\"min_cents\":2500}}"))
+    testing.assert_eq(answer(wire.coupon_lookup, "coupon take5"), String.from("{{\"ok\":true,\"coupon\":{{\"id\":2,\"code\":\"TAKE5\",\"description\":\"$5.00 off orders of $25.00 or more\",\"min_cents\":2500}}}}"))
 }

@@ -107,7 +107,7 @@ fn key_bool(inout out: List[u8], k: str, v: bool) {
     bytes.append(inout out, lit(t))
 }
 
-fn ok_start() -> List[u8] { lit("{\"ok\":true") }
+fn ok_start() -> List[u8] { lit("{{\"ok\":true") }
 
 fn close(out: List[u8]) -> List[u8] {
     let mut o = out.copy()
@@ -117,7 +117,7 @@ fn close(out: List[u8]) -> List[u8] {
 
 /// One error as a JSON object.
 pub fn error_object(e: shared.ShopError) -> List[u8] {
-    let mut out = lit("{\"code\":")
+    let mut out = lit("{{\"code\":")
     bytes.append(inout out, bytes.from_i64(shared.code(e) as i64))
     key_str(inout out, "field", shared.field(e))
     key_str(inout out, "message", shared.message(e))
@@ -126,12 +126,12 @@ pub fn error_object(e: shared.ShopError) -> List[u8] {
 
 /// `{"ok":false,"errors":[...]}`.
 pub fn errors(es: List[shared.ShopError]) -> List[u8] {
-    let mut out = lit("{\"ok\":false,\"errors\":[")
+    let mut out = lit("{{\"ok\":false,\"errors\":[")
     for i in 0..es.len() {
         if i > 0 { out.push(44) }
         bytes.append(inout out, error_object(es[i]))
     }
-    bytes.append(inout out, lit("]}"))
+    bytes.append(inout out, lit(r"]}"))
     out
 }
 
@@ -194,7 +194,7 @@ pub fn customer(req: Request) -> List[u8] {
 
 /// One coupon as `{"id":1,"code":"SAVE10","description":"10% off","min_cents":0}`.
 pub fn coupon_object(c: coupon.Coupon) -> List[u8] {
-    let mut out = lit("{\"id\":")
+    let mut out = lit("{{\"id\":")
     bytes.append(inout out, bytes.from_i64(c.id as i64))
     key_str(inout out, "code", c.code.copy())
     key_str(inout out, "description", coupon.describe(c))

@@ -34,7 +34,7 @@ fn refused(e: store.StoreError) -> jsonrpc.Error {
         store.Rule(r) => shared.code(r) as i64
         _ => 0
     }
-    let mut data = lit("{\"code\":")
+    let mut data = lit("{{\"code\":")
     bytes.append(inout data, bytes.from_i64(code))
     data.push(125)
     jsonrpc.error_data(-32001, store.message(e).bytes(), data)

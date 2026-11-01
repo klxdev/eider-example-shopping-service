@@ -16,7 +16,7 @@ fn text(b: List[u8]) -> String { String.from_bytes(b).unwrap() }
 test "store errors become problem+json with the shared status and message" {
     let p = api.to_problem(store.Rule(shared.OutOfStock(6, 3, 2)))
     assert p.status == 409
-    testing.assert_eq(text(p.body()), String.from("{\"type\":\"about:blank\",\"title\":\"Conflict\",\"status\":409,\"detail\":\"only 2 of product 6 in stock (wanted 3)\",\"errors\":[{\"in\":\"body\",\"pointer\":\"#/qty\",\"detail\":\"only 2 of product 6 in stock (wanted 3)\"}]}"))
+    testing.assert_eq(text(p.body()), String.from("{{\"type\":\"about:blank\",\"title\":\"Conflict\",\"status\":409,\"detail\":\"only 2 of product 6 in stock (wanted 3)\",\"errors\":[{{\"in\":\"body\",\"pointer\":\"#/qty\",\"detail\":\"only 2 of product 6 in stock (wanted 3)\"}}]}}"))
     assert api.to_problem(store.NoCart(4)).status == 404
     let mut es: List[shared.ShopError] = List.new()
     es.push(shared.InvalidName)
@@ -30,7 +30,7 @@ test "store errors become problem+json with the shared status and message" {
 test "encoders" {
     let st = store.store()
     let c = st.add_line(st.new_cart().id, 3, 2).unwrap()
-    testing.assert_eq(text(api.cart_json(c)), String.from("{\"id\":1,\"lines\":[{\"product_id\":3,\"name\":\"Sticker pack\",\"unit_cents\":450,\"qty\":2,\"line_total_cents\":900,\"stock\":100}],\"coupon\":null,\"quote\":{\"subtotal_cents\":900,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":74,\"total_cents\":1573,\"coupon_applied\":false}}"))
+    testing.assert_eq(text(api.cart_json(c)), String.from("{{\"id\":1,\"lines\":[{{\"product_id\":3,\"name\":\"Sticker pack\",\"unit_cents\":450,\"qty\":2,\"line_total_cents\":900,\"stock\":100}}],\"coupon\":null,\"quote\":{{\"subtotal_cents\":900,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":74,\"total_cents\":1573,\"coupon_applied\":false}}}}"))
 }
 
 test "safe paths" {
