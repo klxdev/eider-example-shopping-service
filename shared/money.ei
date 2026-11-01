@@ -1,0 +1,93 @@
+//! shared/money: amounts of money as integer cents, with checked arithmetic.
+//!
+//! Every amount is a whole number of cents between 0 and MAX_CENTS. Nothing here traps:
+//! an operation that would leave that range returns `Err(Overflow)` or `Err(Negative)`, so
+//! a hostile quantity or price becomes an error for the caller instead of ending the
+//! server (a trap is fatal in Eider; docs/site/guide/errors.md, "Traps are not errors").
+//!
+//! MAX_CENTS is 2^53 - 1, the largest integer a JavaScript `number` holds exactly, so every
+//! amount crosses JSON and the WebAssembly boundary without rounding.
+
+import std.bytes
+
+/// The largest amount: 2^53 - 1 cents (about 90 trillion dollars).
+pub const MAX_CENTS: i64 = 9007199254740991
+
+/// An amount of money, in cents (USD). Always 0 to MAX_CENTS.
+pub type Money = { cents: i64 }
+
+/// Why an amount couldn't be computed.
+pub type MoneyError =
+    | Overflow
+    | Negative
+
+/// `cents` as Money, if it is in range.
+pub fn of(cents: i64) -> Result[Money, MoneyError] {
+    if cents < 0 { return Err(Negative) }
+    if cents > MAX_CENTS { return Err(Overflow) }
+    Ok(Money(cents))
+}
+
+pub fn zero() -> Money { Money(0) }
+
+/// a + b. Both are at most MAX_CENTS, so the i64 sum can't overflow; only the range can.
+pub fn add(a: Money, b: Money) -> Result[Money, MoneyError] { of(a.cents + b.cents) }
+
+/// a - b; Negative when b is larger.
+pub fn sub(a: Money, b: Money) -> Result[Money, MoneyError] { of(a.cents - b.cents) }
+
+/// a - b, or zero when b is larger (a discount never makes a total negative).
+pub fn sub_floor(a: Money, b: Money) -> Money {
+    if b.cents >= a.cents { return zero() }
+    Money(a.cents - b.cents)
+}
+
+/// a * n for a count n (a quantity): checked before multiplying, so it never traps.
+// TODO(eider-lang#144): `a.cents.checked_mul(n)`
+pub fn times(a: Money, n: i64) -> Result[Money, MoneyError] {
+    if n < 0 { return Err(Negative) }
+    if n == 0 || a.cents == 0 { return Ok(zero()) }
+    if a.cents > MAX_CENTS / n { return Err(Overflow) }
+    of(a.cents * n)
+}
+
+/// The share `bp` basis points (1/100 of a percent; 825 is 8.25%) of `a`, rounded half up
+/// to the cent. `bp` is 0 to 10000. Computed from quotient and remainder so the
+/// intermediate product stays small: a * bp / 10000 = q * bp + r * bp / 10000.
+pub fn basis_points(a: Money, bp: i64) -> Result[Money, MoneyError] {
+    if bp < 0 { return Err(Negative) }
+    if bp > 10000 { return Err(Overflow) }
+    let q = a.cents / 10000
+    let r = a.cents % 10000
+    // q * bp <= a.cents (bp <= 10000), and r * bp + 5000 < 10^8 + 5000: neither overflows
+    of(q * bp + (r * bp + 5000) / 10000)
+}
+
+pub fn min(a: Money, b: Money) -> Money {
+    if a.cents <= b.cents { return Money(a.cents) }
+    Money(b.cents)
+}
+
+/// "$1,234.05": dollars with thousands separators, then two digits of cents.
+pub fn format(a: Money) -> String {
+    let dollars = a.cents / 100
+    let cents = a.cents % 100
+    let digits = bytes.from_i64(dollars)
+    let mut out = String.from("$")
+    for i in 0..digits.len() {
+        if i > 0 && (digits.len() - i) % 3 == 0 { out.push_byte(44) }
+        out.push_byte(digits[i])
+    }
+    out.push_byte(46)
+    out.push_byte(48 + (cents / 10) as u8)
+    out.push_byte(48 + (cents % 10) as u8)
+    out
+}
+
+/// The text of an error, for people.
+pub fn error_text(e: MoneyError) -> String {
+    match e {
+        Overflow => String.from("the amount is too large")
+        Negative => String.from("the amount can't be negative")
+    }
+}

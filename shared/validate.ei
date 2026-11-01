@@ -1,0 +1,90 @@
+//! shared/validate: the checks on what a shopper types, shared by the server (which
+//! enforces them) and the web page (which shows them before a request is sent).
+
+import std.strings
+import shared
+
+/// A line's quantity is 1 to MAX_QTY.
+pub const MAX_QTY: i64 = 10
+
+/// A cart holds at most MAX_LINES different products.
+pub const MAX_LINES: i64 = 20
+
+/// A name is 1 to MAX_NAME characters after trimming.
+pub const MAX_NAME: usize = 80
+
+/// The longest email address (RFC 5321's path limit).
+pub const MAX_EMAIL: usize = 254
+
+/// A quantity for a cart line.
+pub fn qty(q: i64) -> Result[i64, shared.ShopError] {
+    if q < 1 || q > MAX_QTY { return Err(shared.QtyOutOfRange(1, MAX_QTY)) }
+    Ok(q)
+}
+
+/// `wanted` of product `id` when `have` are in stock.
+pub fn stock(id: i64, wanted: i64, have: i64) -> Result[i64, shared.ShopError] {
+    if wanted > have { return Err(shared.OutOfStock(id, wanted, have)) }
+    Ok(wanted)
+}
+
+/// A customer's name, trimmed: 1 to MAX_NAME characters, no control characters.
+pub fn name(n: String) -> Result[String, shared.ShopError] {
+    let t = strings.trim(n)
+    let count = strings.char_count(t.copy())
+    if count == 0 || count > MAX_NAME { return Err(shared.InvalidName) }
+    for b in t.bytes() {
+        if b < 32 || b == 127 { return Err(shared.InvalidName) }
+    }
+    Ok(t)
+}
+
+/// An email address, trimmed and with its domain in lower case. Deliberately simple: one
+/// `@`, a local part of 1 to 64 printable ASCII characters other than space, and a domain
+/// of dot-separated labels (letters, digits, `-`), at least two of them.
+pub fn email(e: String) -> Result[String, shared.ShopError] {
+    let t = strings.trim(e)
+    if t.len() < 3 || t.len() > MAX_EMAIL { return Err(shared.InvalidEmail) }
+    let parts = strings.split(t.copy(), "@")
+    if parts.len() != 2 { return Err(shared.InvalidEmail) }
+    let local = parts[0].copy()
+    let domain = strings.to_lower(parts[1].copy())
+    if local.len() == 0 || local.len() > 64 { return Err(shared.InvalidEmail) }
+    for b in local.bytes() {
+        if b <= 32 || b >= 127 { return Err(shared.InvalidEmail) }
+    }
+    let labels = strings.split(domain.copy(), ".")
+    if labels.len() < 2 { return Err(shared.InvalidEmail) }
+    for l in labels {
+        if l.len() == 0 || l.len() > 63 { return Err(shared.InvalidEmail) }
+        if l.byte(0) == 45 || l.byte(l.len() - 1) == 45 { return Err(shared.InvalidEmail) }
+        for b in l.bytes() {
+            let ok = (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 45
+            if !ok { return Err(shared.InvalidEmail) }
+        }
+    }
+    let mut out = local.copy()
+    out.push_str("@")
+    out.append(domain)
+    Ok(out)
+}
+
+/// A customer at checkout.
+pub type Customer = { name: String, email: String }
+
+/// The customer, or every field that is wrong (for a form that marks each one).
+pub fn customer(n: String, e: String) -> Result[Customer, List[shared.ShopError]] {
+    let mut errs: List[shared.ShopError] = List.new()
+    let nn = name(n)
+    let ee = email(e)
+    match nn {
+        Err(x) => errs.push(x)
+        Ok(v) => {}
+    }
+    match ee {
+        Err(x) => errs.push(x)
+        Ok(v) => {}
+    }
+    if errs.len() > 0 { return Err(errs) }
+    Ok(Customer(nn.unwrap(), ee.unwrap()))
+}

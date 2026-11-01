@@ -1,0 +1,148 @@
+//! shared: the shop's domain logic, used by the server (native) and the web front end
+//! (WebAssembly, through wasm.ei), so both compute the same totals and refuse the same
+//! input with the same messages.
+//!
+//! | Module | What |
+//! |---|---|
+//! | `shared` (this file) | `ShopError`, its stable codes and messages |
+//! | `shared.money` | `Money` in integer cents with checked arithmetic |
+//! | `shared.coupon` | the coupon table and what a coupon takes off |
+//! | `shared.cart` | cart items (product and quantity), priced lines, the `Quote` |
+//! | `shared.validate` | quantities, stock, customer name and email |
+//! | `shared.wire` | the text protocol of the WebAssembly module (wasm.ei) |
+//!
+//! The package is pure: no function in it declares a capability, so its eider.toml grant
+//! in the server is empty, and the compiler holds it to that (E0204).
+
+import shared.money
+
+/// Everything the shop can refuse. Each variant has a stable code (`code`), which is how an
+/// error crosses the WebAssembly boundary (exports take and return integers only).
+pub type ShopError =
+    | AmountTooLarge
+    | QtyOutOfRange(min: i64, max: i64)
+    | OutOfStock(product_id: i64, wanted: i64, have: i64)
+    | UnknownProduct(product_id: i64)
+    | TooManyLines(max: i64)
+    | UnknownCoupon(code: String)
+    | CouponMinimum(code: String, min_cents: i64)
+    | EmptyCart
+    | InvalidName
+    | InvalidEmail
+    | NotInCart(product_id: i64)
+    | BadInput(what: String)
+
+// `?` on a money result gives a ShopError
+impl From[money.MoneyError] for ShopError {
+    fn from(value: money.MoneyError) -> ShopError { AmountTooLarge }
+}
+
+/// The error's stable code (1 to 12); the TypeScript side switches on it.
+// TODO(eider-lang#105): field patterns (`OutOfStock(..)`) and or-patterns would shorten this
+pub fn code(e: ShopError) -> i32 {
+    match e {
+        AmountTooLarge => 1
+        QtyOutOfRange(a, b) => 2
+        OutOfStock(p, w, h) => 3
+        UnknownProduct(p) => 4
+        TooManyLines(m) => 5
+        UnknownCoupon(c) => 6
+        CouponMinimum(c, m) => 7
+        EmptyCart => 8
+        InvalidName => 9
+        InvalidEmail => 10
+        NotInCart(p) => 11
+        BadInput(w) => 12
+    }
+}
+
+/// The field a request error is about, for problem+json and form errors.
+pub fn field(e: ShopError) -> String {
+    match e {
+        QtyOutOfRange(a, b) => String.from("qty")
+        OutOfStock(p, w, h) => String.from("qty")
+        UnknownProduct(p) => String.from("product_id")
+        UnknownCoupon(c) => String.from("code")
+        CouponMinimum(c, m) => String.from("code")
+        InvalidName => String.from("name")
+        InvalidEmail => String.from("email")
+        NotInCart(p) => String.from("product_id")
+        _ => String.from("")
+    }
+}
+
+fn int(n: i64) -> String { String.from_int(n) }
+
+/// What went wrong, for people. The server's problem+json `detail` and the web page show
+/// this same text.
+// TODO(eider-lang#17): string interpolation turns each arm into one literal
+pub fn message(e: ShopError) -> String {
+    match e {
+        AmountTooLarge => String.from("the amount is too large")
+        QtyOutOfRange(min, max) => {
+            let mut m = String.from("the quantity must be ")
+            m.append(int(min))
+            m.push_str(" to ")
+            m.append(int(max))
+            m
+        }
+        OutOfStock(p, wanted, have) => {
+            let mut m = String.from("only ")
+            m.append(int(have))
+            m.push_str(" of product ")
+            m.append(int(p))
+            m.push_str(" in stock (wanted ")
+            m.append(int(wanted))
+            m.push_str(")")
+            m
+        }
+        UnknownProduct(p) => {
+            let mut m = String.from("there is no product ")
+            m.append(int(p))
+            m
+        }
+        TooManyLines(max) => {
+            let mut m = String.from("a cart holds at most ")
+            m.append(int(max))
+            m.push_str(" different products")
+            m
+        }
+        UnknownCoupon(c) => {
+            let mut m = String.from("there is no coupon ")
+            m.append(c.copy())
+            m
+        }
+        CouponMinimum(c, min) => {
+            let mut m = String.from("coupon ")
+            m.append(c.copy())
+            m.push_str(" needs a subtotal of at least ")
+            m.append(money.format(money.Money(min)))
+            m
+        }
+        EmptyCart => String.from("the cart is empty")
+        InvalidName => String.from("the name must be 1 to 80 characters")
+        InvalidEmail => String.from("the email address is not valid")
+        NotInCart(p) => {
+            let mut m = String.from("product ")
+            m.append(int(p))
+            m.push_str(" is not in the cart")
+            m
+        }
+        BadInput(w) => {
+            let mut m = String.from("bad input: ")
+            m.append(w.copy())
+            m
+        }
+    }
+}
+
+/// The HTTP status the server answers an error with.
+pub fn status(e: ShopError) -> i32 {
+    match e {
+        UnknownProduct(p) => 404
+        NotInCart(p) => 404
+        OutOfStock(p, w, h) => 409
+        BadInput(w) => 400
+        _ => 422
+    }
+}

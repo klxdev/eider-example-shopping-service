@@ -1,0 +1,143 @@
+//! shared/cart: what is in a cart, and what it costs.
+//!
+//! A cart is a List of `Item`s (a product and a quantity); `add`, `set` and `remove` change
+//! it in place (`inout`) and keep it valid: quantities 1 to validate.MAX_QTY, at most
+//! validate.MAX_LINES products, never more than the stock. Pricing takes `Line`s (an item
+//! with its unit price, which the caller looks up in its catalog) and gives a `Quote`, the
+//! one computation of subtotal, discount, shipping, tax and total that the server charges
+//! and the web page shows.
+//!
+//! Lists are values in Eider: a caller's cart changes only where it passes `inout`, so a
+//! failed `add` (an Err) leaves the cart as it was.
+
+import shared
+import shared.money
+import shared.coupon
+import shared.validate
+
+/// Sales tax, in basis points: 8.25%. Charged on the subtotal after discounts, not on
+/// shipping.
+pub const TAX_BP: i64 = 825
+
+/// Shipping for an order under FREE_SHIPPING_FROM: $5.99.
+pub const SHIPPING_CENTS: i64 = 599
+
+/// Orders of $50.00 or more (after discounts) ship free.
+pub const FREE_SHIPPING_FROM: i64 = 5000
+
+/// A product in a cart, and how many.
+pub type Item = { product_id: i64, qty: i64 }
+
+/// An item with its unit price: what pricing needs.
+pub type Line = { product_id: i64, unit: money.Money, qty: i64 }
+
+/// The price of a cart. `coupon_applied` is false when a coupon was given but the subtotal
+/// is below its minimum (the cart changed after the coupon was added).
+pub type Quote = {
+    subtotal: money.Money,
+    discount: money.Money,
+    shipping: money.Money,
+    tax: money.Money,
+    total: money.Money,
+    coupon_applied: bool,
+}
+
+fn find(items: List[Item], product_id: i64) -> Option[usize] {
+    for i in 0..items.len() {
+        if items[i].product_id == product_id { return Some(i) }
+    }
+    None
+}
+
+/// Adds `qty` of a product (`have` in stock) to the cart, merging with its line if it is
+/// there already. On Err the cart is unchanged.
+pub fn add(inout items: List[Item], product_id: i64, qty: i64, have: i64) -> Result[i64, shared.ShopError] {
+    validate.qty(qty)?
+    match find(items, product_id) {
+        Some(i) => {
+            let total = validate.qty(items[i].qty + qty)?
+            validate.stock(product_id, total, have)?
+            items[i].qty = total
+            Ok(total)
+        }
+        None => {
+            if items.len() as i64 >= validate.MAX_LINES { return Err(shared.TooManyLines(validate.MAX_LINES)) }
+            validate.stock(product_id, qty, have)?
+            items.push(Item(product_id, qty))
+            Ok(qty)
+        }
+    }
+}
+
+/// Sets a product's quantity; 0 removes it. A product that isn't in the cart is added.
+pub fn set(inout items: List[Item], product_id: i64, qty: i64, have: i64) -> Result[i64, shared.ShopError] {
+    if qty == 0 {
+        if find(items, product_id).is_some() { remove(inout items, product_id)? }
+        return Ok(0)
+    }
+    validate.qty(qty)?
+    validate.stock(product_id, qty, have)?
+    match find(items, product_id) {
+        Some(i) => { items[i].qty = qty }
+        None => {
+            if items.len() as i64 >= validate.MAX_LINES { return Err(shared.TooManyLines(validate.MAX_LINES)) }
+            items.push(Item(product_id, qty))
+        }
+    }
+    Ok(qty)
+}
+
+/// Removes a product from the cart.
+pub fn remove(inout items: List[Item], product_id: i64) -> Result[i64, shared.ShopError] {
+    if find(items, product_id).is_none() { return Err(shared.NotInCart(product_id)) }
+    let mut keep: List[Item] = List.new()
+    for it in items {
+        if it.product_id != product_id { keep.push(it) }
+    }
+    items = keep
+    Ok(0)
+}
+
+/// unit * qty, checked.
+pub fn line_total(l: Line) -> Result[money.Money, shared.ShopError] {
+    Ok(money.times(l.unit, l.qty)?)
+}
+
+/// The sum of the lines, checked.
+pub fn subtotal(lines: List[Line]) -> Result[money.Money, shared.ShopError] {
+    let mut s = money.zero()
+    for l in lines {
+        s = money.add(s, line_total(l)?)?
+    }
+    Ok(s)
+}
+
+/// Shipping for an order whose discounted subtotal is `after`.
+pub fn shipping(lines: List[Line], after: money.Money, free: bool) -> money.Money {
+    if lines.len() == 0 || free || after.cents >= FREE_SHIPPING_FROM { return money.zero() }
+    money.Money(SHIPPING_CENTS)
+}
+
+/// The price of `lines` with an optional coupon.
+// TODO(eider-lang#106): `let Some(c) = applied else { ... }` would flatten the match
+pub fn quote(lines: List[Line], c: Option[coupon.Coupon]) -> Result[Quote, shared.ShopError] {
+    let sub = subtotal(lines)?
+    let mut discount = money.zero()
+    let mut free = false
+    let mut applied = false
+    match c {
+        Some(cp) => {
+            if coupon.check(cp, sub).is_ok() {
+                discount = coupon.discount(cp, sub)?
+                free = coupon.free_shipping(cp)
+                applied = true
+            }
+        }
+        None => {}
+    }
+    let after = money.sub_floor(sub, discount)
+    let ship = shipping(lines, after, free)
+    let tax = money.basis_points(after, TAX_BP)?
+    let total = money.add(money.add(after, ship)?, tax)?
+    Ok(Quote(sub, discount, ship, tax, total, applied))
+}

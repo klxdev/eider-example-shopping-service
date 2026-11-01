@@ -1,0 +1,95 @@
+//! shared/coupon: the coupons the shop accepts and what each takes off.
+//!
+//! The table is data in the shared package, so the server and the web page agree on which
+//! codes exist without asking each other. Codes are compared after `normalize` (trimmed,
+//! upper case), so " save10" is SAVE10.
+
+import std.strings
+import shared
+import shared.money
+
+/// What a coupon does.
+pub type Kind =
+    | Percent(bp: i64)          // basis points of the subtotal: 1000 is 10%
+    | AmountOff(cents: i64)     // a fixed amount, at most the subtotal
+    | FreeShipping
+
+/// A coupon: `id` is its stable number (how the WebAssembly module names it), `min_cents`
+/// the subtotal it needs.
+pub type Coupon = { id: i32, code: String, kind: Kind, min_cents: i64 }
+
+/// Every coupon, in id order.
+// TODO(eider-lang#49): a List literal instead of the pushes
+pub fn all() -> List[Coupon] {
+    let mut cs: List[Coupon] = List.new()
+    cs.push(Coupon(1, String.from("SAVE10"), Percent(1000), 0))
+    cs.push(Coupon(2, String.from("TAKE5"), AmountOff(500), 2500))
+    cs.push(Coupon(3, String.from("FREESHIP"), FreeShipping, 0))
+    cs
+}
+
+/// A code as typed, trimmed and in upper case.
+pub fn normalize(code: String) -> String { strings.to_upper(strings.trim(code)) }
+
+/// The coupon with this code (after `normalize`).
+pub fn find(code: String) -> Result[Coupon, shared.ShopError] {
+    let want = normalize(code)
+    for c in all() {
+        if c.code == want { return Ok(c) }
+    }
+    Err(shared.UnknownCoupon(want))
+}
+
+/// The coupon with this id.
+pub fn by_id(id: i32) -> Option[Coupon] {
+    for c in all() {
+        if c.id == id { return Some(c) }
+    }
+    None
+}
+
+/// Whether `c` applies to a cart with this subtotal; CouponMinimum when it is too small.
+pub fn check(c: Coupon, subtotal: money.Money) -> Result[Coupon, shared.ShopError] {
+    if subtotal.cents < c.min_cents { return Err(shared.CouponMinimum(c.code.copy(), c.min_cents)) }
+    Ok(c.copy())
+}
+
+/// What `c` takes off `subtotal` (shipping is handled by the quote).
+pub fn discount(c: Coupon, subtotal: money.Money) -> Result[money.Money, shared.ShopError] {
+    match c.kind {
+        Percent(bp) => Ok(money.basis_points(subtotal, bp)?)
+        AmountOff(cents) => Ok(money.min(money.of(cents)?, subtotal))
+        FreeShipping => Ok(money.zero())
+    }
+}
+
+/// Whether `c` makes shipping free.
+pub fn free_shipping(c: Coupon) -> bool {
+    match c.kind {
+        FreeShipping => true
+        _ => false
+    }
+}
+
+/// "10% off", "$5.00 off orders of $25.00 or more", "free shipping".
+pub fn describe(c: Coupon) -> String {
+    let mut out = match c.kind {
+        Percent(bp) => {
+            let mut s = String.from_int(bp / 100)
+            s.push_str("% off")
+            s
+        }
+        AmountOff(cents) => {
+            let mut s = money.format(money.Money(cents))
+            s.push_str(" off")
+            s
+        }
+        FreeShipping => String.from("free shipping")
+    }
+    if c.min_cents > 0 {
+        out.push_str(" orders of ")
+        out.append(money.format(money.Money(c.min_cents)))
+        out.push_str(" or more")
+    }
+    out
+}

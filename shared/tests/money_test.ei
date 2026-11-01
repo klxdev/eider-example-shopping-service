@@ -1,0 +1,48 @@
+// money: checked arithmetic in integer cents.
+import shared.money
+
+// TODO(eider-lang#140): test blocks next to the code, without this empty main
+fn main() {}
+
+fn m(c: i64) -> money.Money { money.of(c).unwrap() }
+
+test "of keeps amounts in range" {
+    assert money.of(0).is_ok()
+    assert money.of(money.MAX_CENTS).is_ok()
+    assert money.of(-1) == Err(money.Negative)
+    assert money.of(money.MAX_CENTS + 1) == Err(money.Overflow)
+}
+
+test "add and sub are checked" {
+    assert money.add(m(150), m(275)) == Ok(m(425))
+    assert money.add(m(money.MAX_CENTS), m(1)) == Err(money.Overflow)
+    assert money.sub(m(500), m(200)) == Ok(m(300))
+    assert money.sub(m(200), m(500)) == Err(money.Negative)
+    assert money.sub_floor(m(200), m(500)) == m(0)
+}
+
+test "times checks before multiplying" {
+    assert money.times(m(1299), 3) == Ok(m(3897))
+    assert money.times(m(1299), 0) == Ok(m(0))
+    assert money.times(m(1299), -1) == Err(money.Negative)
+    assert money.times(m(money.MAX_CENTS), 2) == Err(money.Overflow)
+    // the i64 product would overflow: refused, not trapped
+    assert money.times(m(money.MAX_CENTS), 9223372036854775807) == Err(money.Overflow)
+}
+
+test "basis points round half up" {
+    assert money.basis_points(m(10000), 825) == Ok(m(825))
+    assert money.basis_points(m(1000), 825) == Ok(m(83))     // 82.5 -> 83
+    assert money.basis_points(m(999), 1000) == Ok(m(100))    // 99.9 -> 100
+    assert money.basis_points(m(1), 4999) == Ok(m(0))        // 0.4999 -> 0
+    assert money.basis_points(m(money.MAX_CENTS), 10000) == Ok(m(money.MAX_CENTS))
+    assert money.basis_points(m(1), 10001) == Err(money.Overflow)
+}
+
+test "format" {
+    assert money.format(m(0)) == String.from("$0.00")
+    assert money.format(m(5)) == String.from("$0.05")
+    assert money.format(m(1299)) == String.from("$12.99")
+    assert money.format(m(123456789)) == String.from("$1,234,567.89")
+    assert money.format(m(100000)) == String.from("$1,000.00")
+}
