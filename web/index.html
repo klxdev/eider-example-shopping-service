@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eider Shop</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="#/">Eider Shop</a>
+      <nav>
+        <a href="#/" data-testid="nav-products">Products</a>
+        <a href="#/cart" data-testid="nav-cart">Cart <span id="cart-count">0</span></a>
+        <a href="#/orders" data-testid="nav-orders">Orders</a>
+      </nav>
+    </header>
+    <main id="app" aria-live="polite">Loading…</main>
+    <footer>Totals and validation run in your browser as Eider compiled to WebAssembly: the same code the server runs.</footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+:root { --fg: #1d2330; --muted: #5d6677; --line: #dde2ea; --accent: #0b6e4f; --bad: #b42318; --bg: #f7f8fa; font-family: system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+body { margin: 0; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; background: #fff; border-bottom: 1px solid var(--line); }
+header a { color: var(--fg); text-decoration: none; margin-left: 16px; }
+.brand { font-weight: 700; margin-left: 0; }
+#cart-count { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 0.8em; }
+main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+footer { text-align: center; color: var(--muted); font-size: 0.85em; padding: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.price { font-weight: 600; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.error { color: var(--bad); font-size: 0.9em; min-height: 1.2em; }
+.ok { color: var(--accent); }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+td, th { padding: 8px; border-bottom: 1px solid var(--line); text-align: left; }
+td.num, th.num { text-align: right; }
+input { padding: 6px; border: 1px solid var(--line); border-radius: 4px; }
+input[type="number"] { width: 4em; }
+button { padding: 6px 12px; border: 0; border-radius: 4px; background: var(--accent); color: #fff; cursor: pointer; }
+button.secondary { background: #e7ebf0; color: var(--fg); }
+button:disabled { opacity: 0.5; cursor: default; }
+.totals { margin-left: auto; max-width: 340px; }
+.totals td { border: 0; padding: 4px 8px; }
+.totals tr.total td { font-weight: 700; border-top: 1px solid var(--line); }
+form label { display: block; margin: 12px 0 4px; }

@@ -1,0 +1,26 @@
+{
+  "name": "eider-shop-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Eider Shop's web front end: plain TypeScript, a client generated from the server's /openapi.json, and the shared Eider package as WebAssembly for cart totals and validation",
+  "type": "module",
+  "scripts": {
+    "gen": "node scripts/gen-api.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.2",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
