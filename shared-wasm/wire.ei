@@ -1,6 +1,6 @@
-//! shared/wire: the text protocol of the WebAssembly module (wasm.ei).
+//! shared_wasm.wire: the text protocol of the WebAssembly module (wasm.ei).
 //!
-//! In Eider 0.2 a WebAssembly export takes and returns only integers and bool, so a cart
+//! In Eider 0.3 a WebAssembly export takes and returns only integers and bool, so a cart
 //! (a list) or a name (a string) can't be an argument. The module reads its request as
 //! bytes through two imported host functions instead, and writes its answer as JSON text
 //! through `print` (which the loader routes to the `eider_write` import). This file is
@@ -82,7 +82,8 @@ pub fn parse(src: List[u8]) -> Result[Request, shared.ShopError] {
     Ok(req)
 }
 
-// ---- JSON answers (TODO(eider-json#1): JSON derive writes these from the types)
+// ---- JSON answers, written by hand: eider-json's derived codecs (which the server uses)
+// call core.sys, which a --wasm module can't (TODO(eider-lang#137))
 
 fn key(inout out: List[u8], k: str) {
     out.push(44)

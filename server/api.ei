@@ -22,6 +22,7 @@
 //! code enforces. Errors are RFC 9457 problem+json throughout.
 
 import std.bytes
+import json
 import http
 import http.problem
 import http.middleware
@@ -42,8 +43,7 @@ fn shop_problem(e: shared.ShopError) -> problem.ApiError {
     let mut p = problem.with_detail(shared.status(e), shared.message(e).bytes())
     let f = shared.field(e)
     if f.len() > 0 {
-        let mut ptr = String.from("#/")
-        ptr.append(f)
+        let ptr = "#/{f}"
         p = p.field("body", ptr.bytes(), shared.message(e).bytes())
     }
     p
@@ -57,14 +57,13 @@ pub fn to_problem(e: store.StoreError) -> problem.ApiError {
         store.Invalid(es) => {
             let mut p = problem.with_detail(422, store.message(store.Invalid(es.copy())).bytes())
             for r in es {
-                let mut ptr = String.from("#/")
-                ptr.append(shared.field(r))
+                let f = shared.field(r)
+                let ptr = "#/{f}"
                 p = p.field("body", ptr.bytes(), shared.message(r).bytes())
             }
             p
         }
-        store.NoCart(id) => problem.with_detail(404, store.message(e).bytes())
-        store.NoOrder(id) => problem.with_detail(404, store.message(e).bytes())
+        store.NoCart { .. } | store.NoOrder { .. } => problem.with_detail(404, store.message(e).bytes())
     }
 }
 
@@ -180,66 +179,51 @@ fn checkout_schema() -> schema.Schema {
     s.field("email", email_schema())
 }
 
-// ---- encoders (TODO(eider-json#1): JSON derive writes these)
+// ---- encoders: eider-json's derived codecs (store.ei, shared/cart.ei, shared/money.ei)
 
-fn opt_text(v: Option[String]) -> Option[List[u8]] {
-    match v {
-        Some(s) => Some(s.bytes())
-        None => None
-    }
+pub fn product_json(p: store.Product) -> List[u8] { json.to_json(p) }
+
+fn products_json(ps: List[store.Product]) -> List[u8] { json.to_json(ps) }
+
+pub fn quote_json(q: cart.Quote) -> List[u8] { json.to_json(q) }
+
+pub fn cart_json(c: store.CartView) -> List[u8] { json.to_json(c) }
+
+/// An order as the API shows it: the order's members and when it was placed.
+type OrderBody = { @json(flatten) order: store.Order, created_at: String }
+
+impl json.Encode for OrderBody {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
 }
 
-pub fn product_json(p: store.Product) -> List[u8] {
-    openapi.obj().int("id", p.id).str("sku", p.sku.bytes()).str("name", p.name.bytes()).str("description", p.description.bytes()).int("price_cents", p.price.cents).int("stock", p.stock).done()
+fn order_body(o: store.Order) -> OrderBody {
+    let at = String.from_bytes(middleware.rfc3339(o.created_ns)).unwrap_or(String.from(""))
+    OrderBody(o, at)
 }
 
-fn products_json(ps: List[store.Product]) -> List[u8] {
-    let mut items: List[List[u8]] = List.new()
-    for p in ps { items.push(product_json(p)) }
-    openapi.arr(items)
-}
-
-pub fn quote_json(q: cart.Quote) -> List[u8] {
-    let mut o = openapi.obj().int("subtotal_cents", q.subtotal.cents).int("discount_cents", q.discount.cents)
-    o = o.int("shipping_cents", q.shipping.cents).int("tax_cents", q.tax.cents).int("total_cents", q.total.cents)
-    o.bool("coupon_applied", q.coupon_applied).done()
-}
-
-pub fn cart_json(c: store.CartView) -> List[u8] {
-    let mut lines: List[List[u8]] = List.new()
-    for l in c.lines {
-        let mut o = openapi.obj().int("product_id", l.product_id).str("name", l.name.bytes()).int("unit_cents", l.unit.cents)
-        lines.push(o.int("qty", l.qty).int("line_total_cents", l.line_total.cents).int("stock", l.stock).done())
-    }
-    openapi.obj().int("id", c.id).raw("lines", openapi.arr(lines)).opt_str("coupon", opt_text(c.coupon.copy())).raw("quote", quote_json(c.quote)).done()
-}
-
-pub fn order_json(o: store.Order) -> List[u8] {
-    let mut lines: List[List[u8]] = List.new()
-    for l in o.lines {
-        let ob = openapi.obj().int("product_id", l.product_id).str("name", l.name.bytes()).int("unit_cents", l.unit.cents)
-        lines.push(ob.int("qty", l.qty).int("line_total_cents", l.line_total.cents).done())
-    }
-    let mut b = openapi.obj().int("id", o.id).raw("lines", openapi.arr(lines)).opt_str("coupon", opt_text(o.coupon.copy()))
-    b = b.raw("quote", quote_json(o.quote)).str("name", o.customer.name.bytes()).str("email", o.customer.email.bytes())
-    b.str("created_at", middleware.rfc3339(o.created_ns)).done()
-}
+pub fn order_json(o: store.Order) -> List[u8] { json.to_json(order_body(o)) }
 
 fn orders_json(os: List[store.Order]) -> List[u8] {
-    let mut items: List[List[u8]] = List.new()
-    for o in os { items.push(order_json(o)) }
-    openapi.arr(items)
+    let mut bodies: List[OrderBody] = List.new()
+    for o in os { bodies.push(order_body(o)) }
+    json.to_json(bodies)
+}
+
+/// A coupon as the API shows it: its kind as text (shared/coupon.ei, `describe`).
+type CouponBody = { id: i32, code: String, description: String, min_cents: i64 }
+
+impl json.Encode for CouponBody {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
 }
 
 fn coupons_json(cs: List[coupon.Coupon]) -> List[u8] {
-    let mut items: List[List[u8]] = List.new()
-    for c in cs {
-        items.push(openapi.obj().int("id", c.id as i64).str("code", c.code.bytes()).str("description", coupon.describe(c).bytes()).int("min_cents", c.min_cents).done())
-    }
-    openapi.arr(items)
+    let mut bodies: List[CouponBody] = List.new()
+    for c in cs { bodies.push(CouponBody(c.id, c.code.copy(), coupon.describe(c), c.min_cents)) }
+    json.to_json(bodies)
 }
 
-// ---- decoders (TODO(eider-json#1): JSON derive reads these)
+// ---- decoders: the operation has validated the body against its schema (closed objects,
+// bounds), so the decoders only read the members they take
 
 type LineArgs = { cart: i64, product: i64, qty: i64 }
 
@@ -289,8 +273,8 @@ pub fn service(s: store.Store, now_ns: fn() -> i64) -> openapi.Service {
     let coupon_ref = svc.component("Coupon", coupon_schema())
     let id = id_schema()
 
-    // TODO(eider-lang#146): builders continue on the next line once a method chain may
-    // (eider-openapi gap O1); until then they are reassignments
+    // A method chain doesn't continue on the next line (eider-lang#146, closed as not
+    // planned; eider-openapi gap O1), so the builders are reassignments
     let mut list = openapi.op("GET", "/api/products").operation_id("listProducts").summary("List the catalog").tag("catalog")
     list = list.returns(200, "Every product, by id", schema.array(product))
     svc.add(list, openapi.typed(openapi.no_input, |u: bool| -> Result[List[store.Product], problem.ApiError] { Ok(s.products()) }, products_json))

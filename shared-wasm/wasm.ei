@@ -1,23 +1,24 @@
 // wasm: the shared package as a WebAssembly module for the web front end.
 //
-//   eider build --wasm shared/wasm.ei -o web/src/wasm/shared   (scripts/build.sh does it)
+//   cd shared-wasm && eider build --wasm wasm.ei -o ../web/src/wasm/shared   (scripts/build.sh)
 //
-// Two kinds of export, because in Eider 0.2 exports take and return only integers and
+// Two kinds of export, because in Eider 0.3 exports take and return only integers and
 // bool (docs/site/guide/wasm.md, "Rules"):
 //
 // 1. Integer functions, called directly: `line_total_cents(1299, 2)`, `check_qty(...)`,
 //    and the shop's constants. A negative result from line_total_cents is minus an error
 //    code (shared.code).
 // 2. Buffer functions for what needs text or lists (`quote`, `check_customer`,
-//    `find_coupon`, `format_cents`): the module reads its request (shared/wire's
+//    `find_coupon`, `format_cents`): the module reads its request (shared_wasm.wire's
 //    line format) through two host functions the page passes to `load`,
 //    `host_input_len()` and `host_input_byte(i)`, and writes its answer, JSON text,
 //    with `print`, which the loader sends to the `eider_write` import. They return 0 for
 //    an `"ok":true` answer, else 1. web/src/shop.ts wraps all of this in typed functions.
 //
-// This file is the only one in the package with capabilities (`ffi` for the two host
-// imports, `io` for print). It is a program root, built on its own: the server imports
-// the package's other modules, never this one, so its grant to `shared` stays empty.
+// This file is the only one with capabilities (`ffi` for the two host imports, `io` for
+// print). It is in a package of its own, shared_wasm, because a dependency's grant covers
+// every module a depender could import: inside `shared` it would make the server grant
+// `shared` `ffi, io`. The server depends on `shared` alone, which stays pure.
 //
 // TODO(eider-lang#136): String, List and record parameters replace the host-input
 // protocol; `export(ts)` types replace the hand-written JSON (docs/design/typescript_models.md).
@@ -27,7 +28,7 @@ import shared.money
 import shared.cart
 import shared.coupon
 import shared.validate
-import shared.wire
+import shared_wasm.wire
 
 // supplied by the page (web/src/shop.ts): the bytes of the current request
 // TODO(eider-lang#139): documented, typed host imports (today they need ffi and unsafe)

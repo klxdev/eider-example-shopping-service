@@ -73,23 +73,18 @@ pub fn free_shipping(c: Coupon) -> bool {
 
 /// "10% off", "$5.00 off orders of $25.00 or more", "free shipping".
 pub fn describe(c: Coupon) -> String {
-    let mut out = match c.kind {
+    let what = match c.kind {
         Percent(bp) => {
-            let mut s = String.from_int(bp / 100)
-            s.push_str("% off")
-            s
+            let pct = bp / 100
+            "{pct}% off"
         }
         AmountOff(cents) => {
-            let mut s = money.format(money.Money(cents))
-            s.push_str(" off")
-            s
+            let off = money.format(money.Money(cents))
+            "{off} off"
         }
         FreeShipping => String.from("free shipping")
     }
-    if c.min_cents > 0 {
-        out.push_str(" orders of ")
-        out.append(money.format(money.Money(c.min_cents)))
-        out.push_str(" or more")
-    }
-    out
+    if c.min_cents == 0 { return what }
+    let least = money.format(money.Money(c.min_cents))
+    "{what} orders of {least} or more"
 }

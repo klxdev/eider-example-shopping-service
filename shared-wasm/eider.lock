@@ -1,0 +1,17 @@
+# eider.lock: written by `eider-pkg`. Do not edit.
+version = 1
+
+[[package]]
+name = "json"
+version = "0.3.0"
+source = "git+https://github.com/klxdev/eider-json.git#98ea307ab4f3391dd07bed0b07e43907a57ae416"
+hash = "sha256-fb9b4e4bba110d4a208d4484adcad54712df06ae7e4c867ba597c9c6fa39a8a1"
+deps = []
+grants = []
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+source = "path+../shared"
+deps = ["json"]
+grants = []

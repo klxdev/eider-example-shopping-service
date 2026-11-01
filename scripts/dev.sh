@@ -4,7 +4,8 @@
 #   sh scripts/dev.sh      then open http://localhost:5173  (PORT=... moves the server off 8080)
 #
 # - The server (server/target/server, :8080) is rebuilt and restarted when a .ei file in
-#   server/ or shared/ changes; a change in shared/ also rebuilds the WebAssembly module,
+#   server/, shared/ or shared-wasm/ changes; a change in shared/ or shared-wasm/ also
+#   rebuilds the WebAssembly module,
 #   and a change in server/ regenerates the TypeScript client (Vite reloads the page).
 #   eider has no watch mode (filed as klxdev/eider-lang#147), so this polls once a second.
 # - Vite serves the page with hot reload on :5173 and the page calls the server directly
@@ -36,13 +37,13 @@ VITE_PID=$!
 
 while true; do
     sleep 1
-    shared=$(find "$ROOT/shared" -name '*.ei' -newer "$STAMP" | head -1)
+    shared=$(find "$ROOT/shared" "$ROOT/shared-wasm" -name '*.ei' -newer "$STAMP" | head -1)
     server=$(find "$ROOT/server" -name '*.ei' -not -path '*/target/*' -newer "$STAMP" | head -1)
     [ -z "$shared$server" ] && continue
     touch "$STAMP"
     echo "dev: ${shared:-$server} changed; rebuilding"
     if [ -n "$shared" ]; then
-        (cd "$ROOT/shared" && eider build --wasm wasm.ei -o ../web/src/wasm/shared) || continue
+        (cd "$ROOT/shared-wasm" && eider build --wasm wasm.ei -o ../web/src/wasm/shared) || continue
     fi
     (cd "$ROOT/server" && eider build main.ei -o target/server) || continue
     (cd "$ROOT/web" && npm run --silent gen) || true

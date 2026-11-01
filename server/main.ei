@@ -143,11 +143,7 @@ fn main() uses io, fs, net, clock, threads {
     })
     match srv.serve(h, tok) {
         Ok(st) => {
-            let mut m = String.from("server: stopped after ")
-            m.append(String.from_int(st.requests))
-            m.push_str(" requests on ")
-            m.append(String.from_int(st.connections))
-            m.push_str(" connections")
+            let m = "server: stopped after {st.requests} requests on {st.connections} connections"
             io.errln(m.bytes())
         }
         Err(e) => io.errln(e.bytes())

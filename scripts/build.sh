@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds everything, in dependency order:
 #   1. the Eider packages' dependencies (eider fetch, as eider.lock pins them)
-#   2. shared/wasm.ei -> web/src/wasm/shared.{wasm,js,d.ts}   (eider build --wasm)
+#   2. shared-wasm/wasm.ei -> web/src/wasm/shared.{wasm,js,d.ts}   (eider build --wasm)
 #   3. server/main.ei -> server/target/server                 (eider build)
 #   4. the TypeScript client from the server's OpenAPI description (web: npm run gen)
 #   5. the front end -> web/dist                              (tsc, vite build)
@@ -14,11 +14,12 @@ step "eider toolchain"
 
 step "eider fetch"
 (cd "$ROOT/shared" && eider fetch)
+(cd "$ROOT/shared-wasm" && eider fetch)
 (cd "$ROOT/server" && eider fetch)
 
 step "shared -> WebAssembly"
 mkdir -p "$ROOT/web/src/wasm"
-(cd "$ROOT/shared" && eider build --wasm wasm.ei -o ../web/src/wasm/shared)
+(cd "$ROOT/shared-wasm" && eider build --wasm wasm.ei -o ../web/src/wasm/shared)
 
 step "server"
 mkdir -p "$ROOT/server/target"

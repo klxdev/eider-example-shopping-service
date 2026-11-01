@@ -2,7 +2,7 @@
 import core.sys
 import std.testing
 import shared
-import shared.wire
+import shared_wasm.wire
 
 // TODO(eider-lang#140): test blocks next to the code, without this empty main
 fn main() {}

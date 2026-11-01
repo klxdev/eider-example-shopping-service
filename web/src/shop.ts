@@ -1,9 +1,9 @@
 // The shared Eider package (shared/*.ei), compiled to WebAssembly by
-// `eider build --wasm shared/wasm.ei`, as typed TypeScript functions.
+// `eider build --wasm shared-wasm/wasm.ei`, as typed TypeScript functions.
 //
-// Eider 0.2 exports take and return integers only, so (see shared/wasm.ei):
+// Eider 0.3 exports take and return integers only, so (see shared-wasm/wasm.ei):
 // - integer functions are called directly (BigInt for i64);
-// - text and lists go through a buffer protocol: the request (shared/wire.ei's
+// - text and lists go through a buffer protocol: the request (shared-wasm/wire.ei's
 //   `<key> <value>` lines) is handed to the module through two imports it calls,
 //   `host_input_len` and `host_input_byte`, and the answer comes back as JSON text through
 //   `print`, which the module writes with the `eider_write` import.

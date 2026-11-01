@@ -279,10 +279,7 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     let first = json.parse(log_lines[0]).unwrap()
     check(inout ck, json.field(first, first.root, "id").is_some() && json.field(first, first.root, "status").is_some(), "the access log is JSON with ids")
 
-    let mut summary = bytes.from_i64(ck.run)
-    bytes.append(inout summary, lit(" checks, "))
-    bytes.append(inout summary, bytes.from_i64(ck.failed))
-    bytes.append(inout summary, lit(" failed"))
-    io.outln(summary)
+    let summary = "{ck.run} checks, {ck.failed} failed"
+    io.outln(summary.bytes())
     if ck.failed > 0 { 1 } else { 0 }
 }

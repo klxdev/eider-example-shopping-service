@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds, then runs every test:
 #   shared/tests/*_test.ei     the domain rules (eider test)
+#   shared-wasm/tests/*_test.ei  the WebAssembly module's protocol, natively (eider test)
 #   server/tests/*_test.ei     the store, the API's errors and encoders, static paths
 #   server/tests/e2e_test.ei   the whole service over loopback (eider run)
 #   web                        tsc, vitest (the wasm module and the client), Playwright
@@ -13,6 +14,10 @@ set -eu
 
 step "shared: eider test"
 cd "$ROOT/shared"
+for t in tests/*_test.ei; do echo "-- $t"; eider test "$t"; done
+
+step "shared-wasm: eider test"
+cd "$ROOT/shared-wasm"
 for t in tests/*_test.ei; do echo "-- $t"; eider test "$t"; done
 
 step "server: eider test"

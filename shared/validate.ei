@@ -2,6 +2,7 @@
 //! enforces them) and the web page (which shows them before a request is sent).
 
 import std.strings
+import json
 import shared
 
 /// A line's quantity is 1 to MAX_QTY.
@@ -63,14 +64,15 @@ pub fn email(e: String) -> Result[String, shared.ShopError] {
             if !ok { return Err(shared.InvalidEmail) }
         }
     }
-    let mut out = local.copy()
-    out.push_str("@")
-    out.append(domain)
-    Ok(out)
+    Ok("{local}@{domain}")
 }
 
 /// A customer at checkout.
 pub type Customer = { name: String, email: String }
+
+impl json.Encode for Customer {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
 /// The customer, or every field that is wrong (for a form that marks each one).
 pub fn customer(n: String, e: String) -> Result[Customer, List[shared.ShopError]] {

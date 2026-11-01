@@ -9,12 +9,18 @@
 //! amount crosses JSON and the WebAssembly boundary without rounding.
 
 import std.bytes
+import json
 
 /// The largest amount: 2^53 - 1 cents (about 90 trillion dollars).
 pub const MAX_CENTS: i64 = 9007199254740991
 
 /// An amount of money, in cents (USD). Always 0 to MAX_CENTS.
 pub type Money = { cents: i64 }
+
+// In JSON an amount is its number of cents (a member named `..._cents`), not an object.
+impl json.Encode for Money {
+    fn encode(self, inout w: json.Writer) { w.int(self.cents) }
+}
 
 /// Why an amount couldn't be computed.
 pub type MoneyError =

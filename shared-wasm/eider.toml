@@ -1,0 +1,14 @@
+[package]
+name = "shared_wasm"
+version = "0.1.0"
+eider = "0.3"
+description = "The shared package as a WebAssembly module for the web front end: the exports (wasm.ei) and their text-in, JSON-out protocol (wire.ei). Kept apart from shared, so shared stays pure: wasm.ei's host imports use ffi and io."
+
+# the shop's rules; pure, granted nothing
+[deps.shared]
+path = "../shared"
+
+# JSON string quoting for the answers (wire.ei); pure, granted nothing
+[deps.json]
+git = "https://github.com/klxdev/eider-json.git"
+version = "0.3.0"

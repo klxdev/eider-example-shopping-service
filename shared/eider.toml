@@ -1,10 +1,11 @@
 [package]
 name = "shared"
 version = "0.1.0"
-eider = "0.2"
+eider = "0.3"
 description = "Shopping domain logic shared by the server (native) and the web front end (WebAssembly): money, carts, coupons, tax, validation. Pure: no capabilities."
 
-# JSON string quoting for the WebAssembly module's answers (shared/wire.ei); pure, granted nothing
+# the JSON encoding of Money, Quote and Customer (derived codecs, for the server's API);
+# pure, granted nothing
 [deps.json]
 git = "https://github.com/klxdev/eider-json.git"
-version = "0.2.0"
+version = "0.3.0"

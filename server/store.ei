@@ -10,8 +10,13 @@
 //! The rules (quantities, stock, coupons, totals, the customer's name and email) are the
 //! shared package's, the same code the web page runs as WebAssembly; this file only keeps
 //! the records.
+//!
+//! The records the API returns are written as JSON by codecs eider-json derives from their
+//! fields (`json.encode_record`; eider-lang's docs/site/guide/json.md): `@json(name = ...)`
+//! gives an amount its `..._cents` member, and an order's customer is flattened into it.
 
 import std.sort
+import json
 import std.sync
 import shared
 import shared.money
@@ -19,20 +24,56 @@ import shared.cart
 import shared.coupon
 import shared.validate
 
-pub type Product = { id: i64, sku: String, name: String, description: String, price: money.Money, stock: i64 }
+pub type Product = { id: i64, sku: String, name: String, description: String, @json(name = "price_cents") price: money.Money, stock: i64 }
+
+impl json.Encode for Product {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
 /// A cart as stored: items (product and quantity) and the coupon code, if any. Prices are
 /// looked up when the cart is shown or bought, so a price change applies to open carts.
 type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
 
 /// A cart line as shown: the item with its product's name, price and stock now.
-pub type ViewLine = { product_id: i64, name: String, unit: money.Money, qty: i64, line_total: money.Money, stock: i64 }
+pub type ViewLine = {
+    product_id: i64,
+    name: String,
+    @json(name = "unit_cents") unit: money.Money,
+    qty: i64,
+    @json(name = "line_total_cents") line_total: money.Money,
+    stock: i64,
+}
+
+impl json.Encode for ViewLine {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
 pub type CartView = { id: i64, lines: List[ViewLine], coupon: Option[String], quote: cart.Quote }
 
-pub type OrderLine = { product_id: i64, name: String, unit: money.Money, qty: i64, line_total: money.Money }
+impl json.Encode for CartView {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
-pub type Order = { id: i64, lines: List[OrderLine], coupon: Option[String], quote: cart.Quote, customer: validate.Customer, created_ns: i64 }
+pub type OrderLine = { product_id: i64, name: String, @json(name = "unit_cents") unit: money.Money, qty: i64, @json(name = "line_total_cents") line_total: money.Money }
+
+impl json.Encode for OrderLine {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
+
+/// An order. In JSON the customer's name and email are the order's own members, and the
+/// API adds `created_at` as RFC 3339 text (server/api.ei, OrderBody).
+pub type Order = {
+    id: i64,
+    lines: List[OrderLine],
+    coupon: Option[String],
+    quote: cart.Quote,
+    @json(flatten) customer: validate.Customer,
+    @json(skip) created_ns: i64,
+}
+
+impl json.Encode for Order {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
 /// What the store can refuse: a shared rule, or a cart or order that doesn't exist.
 pub type StoreError =
@@ -55,7 +96,11 @@ type Db = {
 }
 
 /// Counters for the admin API.
-pub type Stats = { products: i64, units_in_stock: i64, open_carts: i64, orders: i64, revenue: money.Money }
+pub type Stats = { products: i64, units_in_stock: i64, open_carts: i64, orders: i64, @json(name = "revenue_cents") revenue: money.Money }
+
+impl json.Encode for Stats {
+    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+}
 
 /// The shop's state; copies share it.
 pub type Store = { st: sync.Lock[Db] }
@@ -125,7 +170,6 @@ fn view(d: Db, c: CartRec) -> Result[CartView, StoreError] {
 }
 
 /// Changes the cart `id` with `f` (the items, `inout`) and shows it. On Err nothing is stored.
-// TODO(eider-lang#15): with defer/errdefer the store-on-success step reads as one line
 fn change(inout d: Db, id: i64, f: fn(Db, inout List[cart.Item]) -> Result[i64, StoreError]) -> Result[CartView, StoreError] {
     let mut c = find_cart(d, id)?
     f(d, inout c.items)?
@@ -307,16 +351,8 @@ impl Store {
 pub fn message(e: StoreError) -> String {
     match e {
         Rule(r) => shared.message(r)
-        Invalid(es) => String.from("the order details are not valid")
-        NoCart(id) => {
-            let mut m = String.from("there is no cart ")
-            m.append(String.from_int(id))
-            m
-        }
-        NoOrder(id) => {
-            let mut m = String.from("there is no order ")
-            m.append(String.from_int(id))
-            m
-        }
+        Invalid { .. } => String.from("the order details are not valid")
+        NoCart(id) => "there is no cart {id}"
+        NoOrder(id) => "there is no order {id}"
     }
 }
