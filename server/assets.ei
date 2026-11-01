@@ -1,0 +1,89 @@
+//! server/assets: serves the built web front end (web/dist) from a directory, so one
+//! process runs the whole app.
+//!
+//! GET /*path reads `<root>/<path>` (`index.html` for `/`). A path with an empty, `.` or
+//! `..` segment, a segment starting with `.`, or a control byte is 404 before the file
+//! system is touched; so is anything under `api/` (an unknown API route answers problem+json,
+//! not the page). The router decodes each segment before joining them with `/`, so an
+//! encoded slash (`%2F`) can't smuggle a `..` past the check: the joined text is split
+//! again here.
+//!
+//! eider-http has no static-file handler yet (filed as klxdev/eider-http#7); this
+//! is the small one an app needs, and the only code in the server that uses `fs`.
+
+import std.bytes
+import std.fs
+import http
+import http.problem
+
+fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+
+/// The media type for a file name, by extension.
+pub fn media_type(name: List[u8]) -> str {
+    let dot = match bytes.rfind_byte(name, 46) {
+        Some(i) => i
+        None => { return "application/octet-stream" }
+    }
+    let ext = bytes.slice(name, dot + 1, name.len())
+    // TODO(eider-lang#105): match on byte-string literals instead of the if chain
+    if bytes.eq(ext, lit("html")) { return "text/html; charset=utf-8" }
+    if bytes.eq(ext, lit("js")) || bytes.eq(ext, lit("mjs")) { return "text/javascript; charset=utf-8" }
+    if bytes.eq(ext, lit("css")) { return "text/css; charset=utf-8" }
+    if bytes.eq(ext, lit("wasm")) { return "application/wasm" }
+    if bytes.eq(ext, lit("json")) || bytes.eq(ext, lit("map")) { return "application/json" }
+    if bytes.eq(ext, lit("svg")) { return "image/svg+xml" }
+    if bytes.eq(ext, lit("png")) { return "image/png" }
+    if bytes.eq(ext, lit("ico")) { return "image/x-icon" }
+    if bytes.eq(ext, lit("txt")) { return "text/plain; charset=utf-8" }
+    "application/octet-stream"
+}
+
+/// The relative file a request path names, or None when it may not be served.
+pub fn safe_path(rest: List[u8]) -> Option[List[u8]] {
+    if rest.len() == 0 { return Some(lit("index.html")) }
+    if bytes.starts_with(rest, lit("api/")) || bytes.eq(rest, lit("api")) { return None }
+    for seg in bytes.split(rest, 47) {
+        if seg.len() == 0 || seg[0] == 46 { return None }       // "", ".", "..", ".git"
+        for b in seg {
+            if b < 32 || b == 127 || b == 92 { return None }     // control bytes, backslash
+        }
+    }
+    Some(rest)
+}
+
+fn not_found() -> http.Response { problem.not_found("no such page or file").response() }
+
+/// A handler serving the files under `root`. Hashed build output (`assets/`) is cached for
+/// a year; everything else is revalidated.
+pub fn handler(root: List[u8]) -> http.Handler uses fs {
+    |q: http.Request| -> http.Response {
+        let rest = q.param("path").unwrap_or(List.new())
+        let rel = match safe_path(rest) {
+            Some(p) => p
+            None => { return not_found() }
+        }
+        let path = fs.join(root, rel)
+        if !fs.exists(path) || fs.is_dir(path) {
+            if rest.len() == 0 { return missing_build(root) }
+            return not_found()
+        }
+        match fs.read(path) {
+            Ok(body) => {
+                let mut r = http.respond(200, media_type(rel), body)
+                let cache = if bytes.starts_with(rel, lit("assets/")) { "public, max-age=31536000, immutable" } else { "no-cache" }
+                r.set_header("Cache-Control", lit(cache))
+                r.set_header("X-Content-Type-Options", lit("nosniff"))
+                r
+            }
+            Err(e) => problem.internal("the file could not be read").response()
+        }
+    }
+}
+
+/// The page at `/` when the front end hasn't been built.
+fn missing_build(root: List[u8]) -> http.Response {
+    let mut b = lit("<!doctype html><title>Eider Shop</title><p>The web front end is not built: run <code>sh scripts/build.sh</code> (looked in <code>")
+    bytes.append(inout b, root)
+    bytes.append(inout b, lit("</code>). The API is at <a href=\"/openapi.json\">/openapi.json</a>.</p>"))
+    http.respond(200, "text/html; charset=utf-8", b)
+}

@@ -1,0 +1,48 @@
+//! server/app: the whole application as one handler: the REST API and /openapi.json
+//! (api.ei), the JSON-RPC admin API (admin.ei), /health, /metrics and the web front end's
+//! files (assets.ei), inside eider-http's middleware.
+//!
+//! Outermost first: request id, access log (one JSON line per request), metrics,
+//! problem+json for the http package's own errors (the router's 404 and 405), CORS for the
+//! dev front end's origin, then the router.
+
+import std.stream
+import std.sync
+import http
+import http.middleware
+import http.metrics
+import rpc.jsonrpc
+import openapi
+import server.store
+import server.api
+import server.admin
+import server.assets
+
+/// What the application is made of besides the store. `log` takes the access log, `cors`
+/// says which origins may call the API from a browser (the Vite dev server), `admin`
+/// checks the bearer token of /rpc and gives the principal.
+pub type Parts[W] = {
+    log: sync.Lock[W],
+    metrics: metrics.Metrics,
+    ids: middleware.Ids,
+    cors: middleware.Cors,
+    admin: fn(List[u8]) -> Option[List[u8]],
+    web_root: List[u8],
+    now_ns: fn() -> i64,
+}
+
+/// The service with every route, before the middleware (also what `--openapi` prints).
+pub fn routes(s: store.Store, p_admin: fn(List[u8]) -> Option[List[u8]], p_metrics: metrics.Metrics, web_root: List[u8], now_ns: fn() -> i64) -> openapi.Service uses fs {
+    let mut svc = api.service(s, now_ns)
+    svc.raw("GET", "/metrics", p_metrics.handler())
+    svc.raw("POST", "/rpc", middleware.bearer("Eider Shop admin", p_admin, jsonrpc.handler(admin.table(s))))
+    svc.raw("GET", "/*path", assets.handler(web_root))
+    svc
+}
+
+/// The application.
+pub fn app[W: stream.Writer + Copy](s: store.Store, p: Parts[W]) -> http.Handler uses io, clock, fs {
+    let svc = routes(s, p.admin, p.metrics, p.web_root, p.now_ns)
+    let inner = middleware.cors(p.cors, svc.handler())
+    middleware.request_id(p.ids, middleware.access_log(p.log, p.metrics.wrap(middleware.problems(inner))))
+}

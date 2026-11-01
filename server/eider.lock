@@ -1,0 +1,41 @@
+# eider.lock: written by `eider-pkg`. Do not edit.
+version = 1
+
+[[package]]
+name = "http"
+version = "0.2.0"
+source = "git+https://github.com/klxdev/eider-http.git#2819b3b30055c4867bccdbd7f802f7d53ae39a32"
+hash = "sha256-630ab32b32323d44a4da8bf64a4d213cbee11c60656f7e3b4c5cf35d9b3be56d"
+deps = ["json"]
+grants = ["net", "io", "clock", "threads"]
+
+[[package]]
+name = "json"
+version = "0.2.0"
+source = "git+https://github.com/klxdev/eider-json.git#e2eed20b467b66f4e0d9029b0da9ff8a718feccd"
+hash = "sha256-3c37ba15720f0a5320b826ea972866349f647e9e1266c348ad04c44e8e13e10c"
+deps = []
+grants = []
+
+[[package]]
+name = "openapi"
+version = "0.2.0"
+source = "git+https://github.com/klxdev/eider-openapi.git#ed4753a88ee22cdfaf2e6e94fae3fde92eb0eaa7"
+hash = "sha256-52ad2fbd66c5682c95ffb671e2492f537ed442a5f4e79deceef589a672ba4d3f"
+deps = ["http", "json"]
+grants = []
+
+[[package]]
+name = "rpc"
+version = "0.2.0"
+source = "git+https://github.com/klxdev/eider-rpc.git#b08bbac0fe13e93a72eb484eb2b74e6988721633"
+hash = "sha256-785944da4cf3f15d16c64d104787f82ecc1aadb66b808c0a2c6747c929f3044b"
+deps = ["http", "json"]
+grants = ["net", "io", "clock"]
+
+[[package]]
+name = "shared"
+version = "0.1.0"
+source = "path+../shared"
+deps = ["json"]
+grants = []

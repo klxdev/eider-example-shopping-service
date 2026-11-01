@@ -1,0 +1,99 @@
+// store: carts, checkout and orders over the in-memory store.
+import std.testing
+import shared
+import shared.money
+import server.store
+
+// TODO(eider-lang#140): test blocks next to the code, without this empty main
+fn main() {}
+
+fn s() -> store.Store { store.store() }
+
+test "catalog" {
+    let st = s()
+    let ps = st.products()
+    assert ps.len() == 6
+    assert ps[0].id == 1
+    assert st.product(1).unwrap().price == money.Money(1299)
+    assert st.product(99) == Err(store.Rule(shared.UnknownProduct(99)))
+}
+
+test "a cart prices with the shared rules" {
+    let st = s()
+    let c = st.new_cart()
+    assert c.lines.len() == 0
+    let v = st.add_line(c.id, 1, 2).unwrap()
+    assert v.lines.len() == 1
+    assert v.lines[0].line_total == money.Money(2598)
+    let v2 = st.add_line(c.id, 3, 1).unwrap()
+    assert v2.quote.subtotal == money.Money(3048)
+    assert v2.quote.total == money.Money(3898)
+    assert st.set_line(c.id, 1, 1).unwrap().lines[0].qty == 1
+    assert st.remove_line(c.id, 3).unwrap().lines.len() == 1
+    assert st.remove_line(c.id, 3) == Err(store.Rule(shared.NotInCart(3)))
+    assert st.add_line(99, 1, 1) == Err(store.NoCart(99))
+    assert st.add_line(c.id, 42, 1) == Err(store.Rule(shared.UnknownProduct(42)))
+    assert st.add_line(c.id, 6, 3) == Err(store.Rule(shared.OutOfStock(6, 3, 2)))
+    // a refused change leaves the cart as it was
+    assert st.cart(c.id).unwrap().lines.len() == 1
+}
+
+test "coupons on a cart" {
+    let st = s()
+    let c = st.new_cart()
+    st.add_line(c.id, 3, 1).unwrap()
+    assert st.set_coupon(c.id, String.from("take5")) == Err(store.Rule(shared.CouponMinimum(String.from("TAKE5"), 2500)))
+    assert st.set_coupon(c.id, String.from("bogus")) == Err(store.Rule(shared.UnknownCoupon(String.from("BOGUS"))))
+    let v = st.set_coupon(c.id, String.from(" save10")).unwrap()
+    assert v.coupon == Some(String.from("SAVE10"))
+    assert v.quote.discount == money.Money(45)
+    assert st.clear_coupon(c.id).unwrap().coupon.is_none()
+}
+
+test "checkout takes the stock and records the order" {
+    let st = s()
+    let c = st.new_cart()
+    st.add_line(c.id, 6, 2).unwrap()
+    st.add_line(c.id, 1, 1).unwrap()
+    let o = st.checkout(c.id, String.from("Ada"), String.from("ada@example.com"), 7).unwrap()
+    assert o.id == 1
+    assert o.lines.len() == 2
+    assert o.quote.subtotal == money.Money(2599)
+    assert st.product(6).unwrap().stock == 0
+    assert st.product(1).unwrap().stock == 24
+    assert st.cart(c.id) == Err(store.NoCart(c.id))
+    assert st.order(1).unwrap().customer.email == String.from("ada@example.com")
+    assert st.orders(None).len() == 1
+    assert st.orders(Some(String.from(" ada@EXAMPLE.com"))).len() == 1
+    assert st.orders(Some(String.from("bob@example.com"))).len() == 0
+    assert st.order(2) == Err(store.NoOrder(2))
+}
+
+test "checkout is all or nothing" {
+    let st = s()
+    let a = st.new_cart()
+    let b = st.new_cart()
+    st.add_line(a.id, 6, 2).unwrap()
+    st.add_line(b.id, 6, 1).unwrap()
+    st.checkout(a.id, String.from("Ada"), String.from("ada@example.com"), 0).unwrap()
+    // b's line was fine when added; the stock is gone now
+    assert st.checkout(b.id, String.from("Bob"), String.from("bob@example.com"), 0) == Err(store.Rule(shared.OutOfStock(6, 1, 0)))
+    assert st.cart(b.id).unwrap().lines.len() == 1
+    let e = st.new_cart()
+    assert st.checkout(e.id, String.from("Eve"), String.from("eve@example.com"), 0) == Err(store.Rule(shared.EmptyCart))
+    match st.checkout(e.id, String.from(""), String.from("x"), 0) {
+        Err(store.Invalid(es)) => assert es.len() == 2
+        _ => assert false
+    }
+}
+
+test "admin" {
+    let st = s()
+    assert st.restock(6, 10).unwrap().stock == 12
+    assert st.restock(6, 0) == Err(store.Rule(shared.QtyOutOfRange(1, 10000)))
+    assert st.set_price(1, 1000).unwrap().price == money.Money(1000)
+    assert st.set_price(1, -5) == Err(store.Rule(shared.AmountTooLarge))
+    let stats = st.stats()
+    assert stats.products == 6
+    assert stats.orders == 0
+}

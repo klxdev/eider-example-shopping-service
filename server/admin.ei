@@ -1,0 +1,76 @@
+//! server/admin: a JSON-RPC 2.0 admin API (eider-rpc) at POST /rpc, behind a bearer token.
+//!
+//!   admin.stats()                         -> {products, units_in_stock, open_carts, orders, revenue_cents}
+//!   admin.restock(product_id, qty)        -> the product
+//!   admin.set_price(product_id, cents)    -> the product
+//!
+//! Parameters are positional (`[1, 5]`) or named (`{"product_id": 1, "qty": 5}`). A refused
+//! change is error -32001 with the shared rule's message, and the `data` member names the
+//! rule's code (shared.code).
+
+import std.bytes
+import json
+import rpc.jsonrpc
+import shared
+import server.store
+import server.api
+
+fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+
+type Change = { product: i64, amount: i64 }
+
+fn change_args(p: jsonrpc.Params, second: str) -> Result[Change, jsonrpc.Error] {
+    p.at_most(2)?
+    Ok(Change(p.int(0, "product_id")?, p.int(1, second)?))
+}
+
+fn restock_args(p: jsonrpc.Params) -> Result[Change, jsonrpc.Error] { change_args(p, "qty") }
+
+fn price_args(p: jsonrpc.Params) -> Result[Change, jsonrpc.Error] { change_args(p, "cents") }
+
+fn refused(e: store.StoreError) -> jsonrpc.Error {
+    // TODO(eider-lang#143): the annotation; `_ => 0` alone is an i32
+    let code: i64 = match e {
+        store.Rule(r) => shared.code(r) as i64
+        _ => 0
+    }
+    let mut data = lit("{\"code\":")
+    bytes.append(inout data, bytes.from_i64(code))
+    data.push(125)
+    jsonrpc.error_data(-32001, store.message(e).bytes(), data)
+}
+
+fn lift(r: Result[store.Product, store.StoreError]) -> Result[store.Product, jsonrpc.Error] {
+    match r {
+        Ok(p) => Ok(p)
+        Err(e) => Err(refused(e))
+    }
+}
+
+fn stats_json(st: store.Stats) -> List[u8] {
+    let mut ks: List[List[u8]] = List.new()
+    let mut vs: List[List[u8]] = List.new()
+    ks.push(lit("products"))
+    vs.push(jsonrpc.int(st.products))
+    ks.push(lit("units_in_stock"))
+    vs.push(jsonrpc.int(st.units_in_stock))
+    ks.push(lit("open_carts"))
+    vs.push(jsonrpc.int(st.open_carts))
+    ks.push(lit("orders"))
+    vs.push(jsonrpc.int(st.orders))
+    ks.push(lit("revenue_cents"))
+    vs.push(jsonrpc.int(st.revenue.cents))
+    jsonrpc.object(ks, vs)
+}
+
+/// The admin methods over `s`.
+pub fn table(s: store.Store) -> jsonrpc.Table {
+    let mut t = jsonrpc.table()
+    t.add("admin.stats", |p: jsonrpc.Params| -> Result[List[u8], jsonrpc.Error] {
+        p.none()?
+        Ok(stats_json(s.stats()))
+    })
+    t.add_typed("admin.restock", restock_args, api.product_json, |c: Change| -> Result[store.Product, jsonrpc.Error] { lift(s.restock(c.product, c.amount)) })
+    t.add_typed("admin.set_price", price_args, api.product_json, |c: Change| -> Result[store.Product, jsonrpc.Error] { lift(s.set_price(c.product, c.amount)) })
+    t
+}

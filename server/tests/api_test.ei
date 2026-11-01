@@ -1,0 +1,48 @@
+// api and assets: problem+json from store errors, encoders, and the static path checks.
+import std.bytes
+import std.testing
+import shared
+import server.store
+import server.api
+import server.assets
+
+// TODO(eider-lang#140): test blocks next to the code, without this empty main
+fn main() {}
+
+fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+
+fn text(b: List[u8]) -> String { String.from_bytes(b).unwrap() }
+
+test "store errors become problem+json with the shared status and message" {
+    let p = api.to_problem(store.Rule(shared.OutOfStock(6, 3, 2)))
+    assert p.status == 409
+    testing.assert_eq(text(p.body()), String.from("{\"type\":\"about:blank\",\"title\":\"Conflict\",\"status\":409,\"detail\":\"only 2 of product 6 in stock (wanted 3)\",\"errors\":[{\"in\":\"body\",\"pointer\":\"#/qty\",\"detail\":\"only 2 of product 6 in stock (wanted 3)\"}]}"))
+    assert api.to_problem(store.NoCart(4)).status == 404
+    let mut es: List[shared.ShopError] = List.new()
+    es.push(shared.InvalidName)
+    es.push(shared.InvalidEmail)
+    let inv = api.to_problem(store.Invalid(es))
+    assert inv.status == 422
+    assert inv.errors.len() == 2
+    assert api.to_problem(store.Rule(shared.EmptyCart)).errors.len() == 0
+}
+
+test "encoders" {
+    let st = store.store()
+    let c = st.add_line(st.new_cart().id, 3, 2).unwrap()
+    testing.assert_eq(text(api.cart_json(c)), String.from("{\"id\":1,\"lines\":[{\"product_id\":3,\"name\":\"Sticker pack\",\"unit_cents\":450,\"qty\":2,\"line_total_cents\":900,\"stock\":100}],\"coupon\":null,\"quote\":{\"subtotal_cents\":900,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":74,\"total_cents\":1573,\"coupon_applied\":false}}"))
+}
+
+test "safe paths" {
+    assert assets.safe_path(List.new()) == Some(lit("index.html"))
+    assert assets.safe_path(lit("assets/app.js")) == Some(lit("assets/app.js"))
+    for bad in ["..", "a/../b", "./a", ".env", "a//b", "api/products", "api", "a\\b"] {
+        assert assets.safe_path(lit(bad)).is_none(), "an unsafe path was accepted"
+    }
+}
+
+test "media types" {
+    assert assets.media_type(lit("index.html")) == "text/html; charset=utf-8"
+    assert assets.media_type(lit("assets/x.wasm")) == "application/wasm"
+    assert assets.media_type(lit("README")) == "application/octet-stream"
+}

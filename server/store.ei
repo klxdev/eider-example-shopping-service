@@ -1,0 +1,322 @@
+//! server/store: the shop's state (catalog, carts, orders) in memory, behind one
+//! std/sync Lock shared by every worker thread.
+//!
+//! Each operation is one critical section (`Lock.modify`, which hands the closure the state
+//! `inout`, so it changes in place). Checkout reads the cart, checks every line's stock,
+//! prices it with shared/cart and takes the stock in the same section, so two shoppers can't
+//! both buy the last item. Records are values: what an operation returns is a copy, and a
+//! caller changing it changes nothing in the store.
+//!
+//! The rules (quantities, stock, coupons, totals, the customer's name and email) are the
+//! shared package's, the same code the web page runs as WebAssembly; this file only keeps
+//! the records.
+
+import std.sort
+import std.sync
+import shared
+import shared.money
+import shared.cart
+import shared.coupon
+import shared.validate
+
+pub type Product = { id: i64, sku: String, name: String, description: String, price: money.Money, stock: i64 }
+
+/// A cart as stored: items (product and quantity) and the coupon code, if any. Prices are
+/// looked up when the cart is shown or bought, so a price change applies to open carts.
+type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
+
+/// A cart line as shown: the item with its product's name, price and stock now.
+pub type ViewLine = { product_id: i64, name: String, unit: money.Money, qty: i64, line_total: money.Money, stock: i64 }
+
+pub type CartView = { id: i64, lines: List[ViewLine], coupon: Option[String], quote: cart.Quote }
+
+pub type OrderLine = { product_id: i64, name: String, unit: money.Money, qty: i64, line_total: money.Money }
+
+pub type Order = { id: i64, lines: List[OrderLine], coupon: Option[String], quote: cart.Quote, customer: validate.Customer, created_ns: i64 }
+
+/// What the store can refuse: a shared rule, or a cart or order that doesn't exist.
+pub type StoreError =
+    | Rule(e: shared.ShopError)
+    | Invalid(errors: List[shared.ShopError])
+    | NoCart(id: i64)
+    | NoOrder(id: i64)
+
+// `?` on a shared rule's Result gives a StoreError (errors.md, "Converting errors: From")
+impl From[shared.ShopError] for StoreError {
+    fn from(value: shared.ShopError) -> StoreError { Rule(value) }
+}
+
+type Db = {
+    products: Map[i64, Product],
+    carts: Map[i64, CartRec],
+    orders: Map[i64, Order],
+    next_cart: i64,
+    next_order: i64,
+}
+
+/// Counters for the admin API.
+pub type Stats = { products: i64, units_in_stock: i64, open_carts: i64, orders: i64, revenue: money.Money }
+
+/// The shop's state; copies share it.
+pub type Store = { st: sync.Lock[Db] }
+
+fn product(id: i64, sku: str, name: str, desc: str, cents: i64, stock: i64) -> Product {
+    Product(id, String.from(sku), String.from(name), String.from(desc), money.Money(cents), stock)
+}
+
+/// The demo catalog.
+pub fn catalog() -> List[Product] {
+    let mut ps: List[Product] = List.new()
+    ps.push(product(1, "EID-MUG", "Eider mug", "A 350 ml stoneware mug with the eider duck on it.", 1299, 25))
+    ps.push(product(2, "EID-TEE", "Eider T-shirt", "Organic cotton, the duck on the front, `uses io` on the back.", 2400, 12))
+    ps.push(product(3, "EID-STK", "Sticker pack", "Six vinyl stickers: the duck, Result, Option, ?, Lock and inout.", 450, 100))
+    ps.push(product(4, "EID-HOO", "Hoodie", "Heavy fleece hoodie for long compile-free afternoons.", 5500, 5))
+    ps.push(product(5, "EID-NBK", "Notebook", "A5 dotted notebook for drawing memory diagrams by hand.", 899, 40))
+    ps.push(product(6, "EID-PIN", "Enamel pin", "The duck in hard enamel. Limited run.", 650, 2))
+    ps
+}
+
+pub fn store_with(products: List[Product]) -> Store {
+    let mut m: Map[i64, Product] = Map.new()
+    for p in products { m.insert(p.id, p) }
+    Store(sync.lock(Db(m, Map.new(), Map.new(), 1, 1)))
+}
+
+pub fn store() -> Store { store_with(catalog()) }
+
+// ---- helpers inside a critical section (they take the state, never the lock)
+
+fn find_product(d: Db, id: i64) -> Result[Product, StoreError] {
+    match d.products.get(id) {
+        Some(p) => Ok(p)
+        None => Err(Rule(shared.UnknownProduct(id)))
+    }
+}
+
+fn find_cart(d: Db, id: i64) -> Result[CartRec, StoreError] { d.carts.get(id).ok_or(NoCart(id)) }
+
+/// The priced lines of `items`, as shared/cart takes them.
+fn lines_of(d: Db, items: List[cart.Item]) -> Result[List[cart.Line], StoreError] {
+    let mut out: List[cart.Line] = List.new()
+    for it in items {
+        let p = find_product(d, it.product_id)?
+        out.push(cart.Line(p.id, p.price.copy(), it.qty))
+    }
+    Ok(out)
+}
+
+fn coupon_of(code: Option[String]) -> Option[coupon.Coupon] {
+    match code {
+        Some(c) => coupon.find(c).ok()
+        None => None
+    }
+}
+
+fn view(d: Db, c: CartRec) -> Result[CartView, StoreError] {
+    let lines = lines_of(d, c.items)?
+    let q = cart.quote(lines, coupon_of(c.coupon.copy()))?
+    let mut vs: List[ViewLine] = List.new()
+    for it in c.items {
+        let p = find_product(d, it.product_id)?
+        let total = cart.line_total(cart.Line(p.id, p.price.copy(), it.qty))?
+        vs.push(ViewLine(p.id, p.name.copy(), p.price.copy(), it.qty, total, p.stock))
+    }
+    Ok(CartView(c.id, vs, c.coupon.copy(), q))
+}
+
+/// Changes the cart `id` with `f` (the items, `inout`) and shows it. On Err nothing is stored.
+// TODO(eider-lang#15): with defer/errdefer the store-on-success step reads as one line
+fn change(inout d: Db, id: i64, f: fn(Db, inout List[cart.Item]) -> Result[i64, StoreError]) -> Result[CartView, StoreError] {
+    let mut c = find_cart(d, id)?
+    f(d, inout c.items)?
+    d.carts.insert(id, c.copy())
+    view(d, c)
+}
+
+impl Store {
+    /// Every product, by id.
+    fn products(self) -> List[Product] {
+        self.st.modify(|inout d: Db| -> List[Product] {
+            let mut out: List[Product] = List.new()
+            for id in sort.sort(d.products.keys()) { out.push(d.products.get(id).unwrap()) }
+            out
+        })
+    }
+
+    fn product(self, id: i64) -> Result[Product, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[Product, StoreError] { find_product(d, id) })
+    }
+
+    fn new_cart(self) -> CartView {
+        self.st.modify(|inout d: Db| -> CartView {
+            let c = CartRec(d.next_cart, List.new(), None)
+            d.next_cart += 1
+            d.carts.insert(c.id, c.copy())
+            view(d, c).unwrap()     // an empty cart always prices
+        })
+    }
+
+    fn cart(self, id: i64) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] { view(d, find_cart(d, id)?) })
+    }
+
+    /// Adds `qty` of a product to a cart (merging with its line).
+    fn add_line(self, id: i64, product_id: i64, qty: i64) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] {
+            change(inout d, id, |db: Db, inout items: List[cart.Item]| -> Result[i64, StoreError] {
+                let p = find_product(db, product_id)?
+                Ok(cart.add(inout items, product_id, qty, p.stock)?)
+            })
+        })
+    }
+
+    /// Sets a line's quantity (0 removes it).
+    fn set_line(self, id: i64, product_id: i64, qty: i64) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] {
+            change(inout d, id, |db: Db, inout items: List[cart.Item]| -> Result[i64, StoreError] {
+                let p = find_product(db, product_id)?
+                Ok(cart.set(inout items, product_id, qty, p.stock)?)
+            })
+        })
+    }
+
+    fn remove_line(self, id: i64, product_id: i64) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] {
+            change(inout d, id, |db: Db, inout items: List[cart.Item]| -> Result[i64, StoreError] {
+                Ok(cart.remove(inout items, product_id)?)
+            })
+        })
+    }
+
+    /// Puts a coupon on a cart: it must exist and the cart must meet its minimum now.
+    fn set_coupon(self, id: i64, code: String) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] {
+            let mut c = find_cart(d, id)?
+            let cp = coupon.find(code)?
+            let sub = cart.subtotal(lines_of(d, c.items)?)?
+            coupon.check(cp, sub)?
+            c.coupon = Some(cp.code.copy())
+            d.carts.insert(id, c.copy())
+            view(d, c)
+        })
+    }
+
+    fn clear_coupon(self, id: i64) -> Result[CartView, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[CartView, StoreError] {
+            let mut c = find_cart(d, id)?
+            c.coupon = None
+            d.carts.insert(id, c.copy())
+            view(d, c)
+        })
+    }
+
+    /// Buys cart `id`: validates the customer, checks the stock of every line, prices the
+    /// cart, takes the stock, records the order and deletes the cart. All or nothing.
+    fn checkout(self, id: i64, name: String, email: String, now_ns: i64) -> Result[Order, StoreError] {
+        let cust = match validate.customer(name, email) {
+            Ok(c) => c
+            Err(es) => { return Err(Invalid(es)) }
+        }
+        self.st.modify(|inout d: Db| -> Result[Order, StoreError] {
+            let c = find_cart(d, id)?
+            if c.items.len() == 0 { return Err(Rule(shared.EmptyCart)) }
+            let mut ols: List[OrderLine] = List.new()
+            for it in c.items {
+                let p = find_product(d, it.product_id)?
+                validate.stock(p.id, it.qty, p.stock)?
+                let total = cart.line_total(cart.Line(p.id, p.price.copy(), it.qty))?
+                ols.push(OrderLine(p.id, p.name.copy(), p.price.copy(), it.qty, total))
+            }
+            let q = cart.quote(lines_of(d, c.items)?, coupon_of(c.coupon.copy()))?
+            // every check passed: now change the state
+            for it in c.items {
+                let mut p = d.products.get(it.product_id).unwrap()
+                p.stock -= it.qty
+                d.products.insert(p.id, p)
+            }
+            let o = Order(d.next_order, ols, c.coupon.copy(), q, cust.copy(), now_ns)
+            d.next_order += 1
+            d.orders.insert(o.id, o.copy())
+            d.carts.remove(id)
+            Ok(o)
+        })
+    }
+
+    /// Orders, newest first; only `email`'s when given.
+    fn orders(self, email: Option[String]) -> List[Order] {
+        // TODO(eider-lang#143): the annotation
+        let want: Option[String] = match email {
+            Some(e) => Some(validate.email(e).unwrap_or(String.from("")))
+            None => None
+        }
+        self.st.modify(|inout d: Db| -> List[Order] {
+            let mut out: List[Order] = List.new()
+            for id in sort.sort_desc(d.orders.keys()) {
+                let o = d.orders.get(id).unwrap()
+                let keep = match want {
+                    Some(e) => o.customer.email == e
+                    None => true
+                }
+                if keep { out.push(o) }
+            }
+            out
+        })
+    }
+
+    fn order(self, id: i64) -> Result[Order, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[Order, StoreError] { d.orders.get(id).ok_or(NoOrder(id)) })
+    }
+
+    // ---- admin (the JSON-RPC API in admin.ei)
+
+    /// Adds `qty` (1 to 10000) to a product's stock.
+    fn restock(self, product_id: i64, qty: i64) -> Result[Product, StoreError] {
+        self.st.modify(|inout d: Db| -> Result[Product, StoreError] {
+            let mut p = find_product(d, product_id)?
+            if qty < 1 || qty > 10000 { return Err(Rule(shared.QtyOutOfRange(1, 10000))) }
+            if p.stock > 1000000 { return Err(Rule(shared.QtyOutOfRange(0, 1000000))) }
+            p.stock += qty
+            d.products.insert(p.id, p.copy())
+            Ok(p)
+        })
+    }
+
+    fn set_price(self, product_id: i64, cents: i64) -> Result[Product, StoreError] {
+        // no chained From: MoneyError -> ShopError -> StoreError is two conversions
+        let price = money.of(cents).ok().ok_or(Rule(shared.AmountTooLarge))?
+        self.st.modify(|inout d: Db| -> Result[Product, StoreError] {
+            let mut p = find_product(d, product_id)?
+            p.price = price
+            d.products.insert(p.id, p.copy())
+            Ok(p)
+        })
+    }
+
+    fn stats(self) -> Stats {
+        self.st.modify(|inout d: Db| -> Stats {
+            let mut units: i64 = 0
+            for (id, p) in d.products { units += p.stock }
+            let mut revenue = money.zero()
+            for (id, o) in d.orders { revenue = money.add(revenue, o.quote.total).unwrap_or(money.Money(money.MAX_CENTS)) }
+            Stats(d.products.len() as i64, units, d.carts.len() as i64, d.orders.len() as i64, revenue)
+        })
+    }
+}
+
+/// The text of a store error, for problem+json.
+pub fn message(e: StoreError) -> String {
+    match e {
+        Rule(r) => shared.message(r)
+        Invalid(es) => String.from("the order details are not valid")
+        NoCart(id) => {
+            let mut m = String.from("there is no cart ")
+            m.append(String.from_int(id))
+            m
+        }
+        NoOrder(id) => {
+            let mut m = String.from("there is no order ")
+            m.append(String.from_int(id))
+            m
+        }
+    }
+}

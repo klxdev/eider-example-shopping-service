@@ -1,0 +1,288 @@
+// End to end: the whole application (app.app) on 127.0.0.1 on an ephemeral port, called
+// over loopback with eider-http's client. No fixed ports and no sleeps: the server listens
+// before its thread starts, each call waits (with a deadline) for its own response, and
+// shutdown is the server's cancellation token.
+//
+//   cd server && eider run tests/e2e_test.ei     (exit 0 when every check passed)
+//
+// Covers: the catalog, a cart from empty to checkout with the totals of the shared package,
+// validation from the OpenAPI operations (400), the shared rules (409, 422), problem+json
+// 404s, CORS for the dev origin, the JSON-RPC admin API and its token, four shoppers racing
+// for the last two pins (exactly two orders), /metrics, /openapi.json, the static front end
+// and its path checks, graceful shutdown and the access log.
+
+import std.bytes
+import std.fs
+import std.io
+import std.net
+import std.stream
+import std.sync
+import std.task
+import std.time
+import json
+import http
+import http.server
+import http.client
+import http.middleware
+import http.metrics
+import server.store
+import server.app
+
+fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+
+const TOKEN: str = "e2e-admin"
+
+type Checks = { run: i64, failed: i64 }
+
+fn check(inout c: Checks, ok: bool, what: str) uses io {
+    c.run += 1
+    if !ok {
+        c.failed += 1
+        io.errln(bytes.concat(lit("FAILED: "), lit(what)))
+    }
+}
+
+fn call(inout c: client.Conn, method: str, target: str, body: str, dl: time.Deadline) -> http.Response uses net, io, clock {
+    let mut r = http.request(method, lit(target))
+    if body.len() > 0 {
+        r.body = lit(body)
+        r.set_header("Content-Type", lit("application/json"))
+    }
+    match c.request(r, dl) {
+        Ok(resp) => resp
+        Err(e) => {
+            io.errln(e.bytes())
+            http.response(599)
+        }
+    }
+}
+
+fn rpc(inout c: client.Conn, body: str, auth: bool, dl: time.Deadline) -> http.Response uses net, io, clock {
+    let mut r = http.request("POST", lit("/rpc"))
+    r.body = lit(body)
+    r.set_header("Content-Type", lit("application/json"))
+    if auth { r.set_header("Authorization", bytes.concat(lit("Bearer "), lit(TOKEN))) }
+    c.request(r, dl).unwrap()
+}
+
+/// The integer at `path` (keys) in a JSON body; -1 when it isn't there.
+fn int_at(body: List[u8], keys: List[str]) -> i64 {
+    let d = match json.parse(body) {
+        Ok(d) => d
+        Err(e) => { return -1 }
+    }
+    let mut ks: List[List[u8]] = List.new()
+    for k in keys { ks.push(lit(k)) }
+    match json.path(d, d.root, ks) {
+        Some(n) => json.as_int(d, n).unwrap_or(-1)
+        None => -1
+    }
+}
+
+fn has(body: List[u8], s: str) -> bool { bytes.find(body, lit(s), 0).is_some() }
+
+fn one(k: str) -> List[str] {
+    let mut l: List[str] = List.new()
+    l.push(k)
+    l
+}
+
+fn two(a: str, b: str) -> List[str] {
+    let mut l = one(a)
+    l.push(b)
+    l
+}
+
+fn fixed_now() -> i64 { 1761955200000000000 }   // 2025-11-01T00:00:00Z
+
+fn main() -> i32 uses io, fs, net, clock, threads {
+    let dl = time.after_ms(30000)
+    let mut ck = Checks(0, 0)
+
+    // a small "built front end" to serve
+    let web = lit("target/e2e-web")
+    fs.mkdir_all(fs.join(web, lit("assets"))).unwrap()
+    fs.write(fs.join(web, lit("index.html")), lit("<!doctype html><title>shop</title>")).unwrap()
+    fs.write(fs.join(web, lit("assets/app-1.js")), lit("console.log(1)")).unwrap()
+    fs.write(fs.join(web, lit("shared.wasm")), lit("not really wasm")).unwrap()
+
+    let mut cfg = server.config()
+    cfg.workers = 4
+    let srv = server.listen(net.ipv4(127, 0, 0, 1, 0), cfg).unwrap()
+    let addr = srv.addr()
+    check(inout ck, addr.port > 0, "an ephemeral port")
+
+    let log = sync.lock(stream.buffer())
+    let mut tokens: List[(List[u8], List[u8])] = List.new()
+    tokens.push((lit(TOKEN), lit("admin")))
+    let parts = app.Parts(log, metrics.new(), middleware.ids("req"), middleware.cors_config().allow_origin("http://localhost:5173"), middleware.token_table(tokens), web, fixed_now)
+    let h = app.app(store.store(), parts)
+    let tok = task.root()
+    let t = tok
+    let running = spawn(|| -> server.Stats { srv.serve(h, t).unwrap() })
+
+    let mut c = client.connect(addr, dl).unwrap()
+
+    // ---- catalog
+    check(inout ck, call(inout c, "GET", "/health", "", dl).status == 200, "health")
+    let ps = call(inout c, "GET", "/api/products", "", dl)
+    check(inout ck, ps.status == 200 && has(ps.body, "\"sku\":\"EID-MUG\""), "the catalog lists the mug")
+    let p6 = call(inout c, "GET", "/api/products/6", "", dl)
+    check(inout ck, int_at(p6.body, one("stock")) == 2, "two pins in stock")
+    let nf = call(inout c, "GET", "/api/products/99", "", dl)
+    check(inout ck, nf.status == 404 && bytes.eq(nf.header("content-type").unwrap(), lit("application/problem+json")), "an unknown product is a problem+json 404")
+    check(inout ck, call(inout c, "GET", "/api/products/x", "", dl).status == 400, "a non-integer id is 400")
+    let cps = call(inout c, "GET", "/api/coupons", "", dl)
+    check(inout ck, has(cps.body, "\"code\":\"TAKE5\"") && has(cps.body, "$5.00 off orders of $25.00 or more"), "coupons come from shared/coupon")
+
+    // ---- a cart, from empty to checkout
+    let made = call(inout c, "POST", "/api/carts", "", dl)
+    check(inout ck, made.status == 201, "a new cart is 201")
+    let id = int_at(made.body, one("id"))
+    let base = bytes.concat(lit("/api/carts/"), bytes.from_i64(id))
+    let lines = bytes.concat(base.copy(), lit("/lines"))
+    let mut add = http.request("POST", lines.copy())
+    add.body = lit("{\"product_id\": 1, \"qty\": 2}")
+    add.set_header("Content-Type", lit("application/json"))
+    let a1 = c.request(add, dl).unwrap()
+    check(inout ck, a1.status == 200 && int_at(a1.body, two("quote", "subtotal_cents")) == 2598, "two mugs: $25.98")
+    check(inout ck, int_at(a1.body, two("quote", "total_cents")) == 3411, "with shipping and 8.25% tax: $34.11")
+    let mut add3 = add.copy()
+    add3.body = lit("{\"product_id\": 3, \"qty\": 1}")
+    check(inout ck, int_at(c.request(add3, dl).unwrap().body, two("quote", "total_cents")) == 3898, "plus stickers: $38.98 (the shared test's number)")
+
+    let mut bad = add.copy()
+    bad.body = lit("{\"product_id\": 1, \"qty\": 0, \"colour\": \"red\"}")
+    let br = c.request(bad, dl).unwrap()
+    check(inout ck, br.status == 400 && has(br.body, "\"pointer\":\"#/qty\"") && has(br.body, "\"pointer\":\"#/colour\""), "validation from the operation lists every wrong member")
+    let mut over = add.copy()
+    over.body = lit("{\"product_id\": 6, \"qty\": 3}")
+    let orr = c.request(over, dl).unwrap()
+    check(inout ck, orr.status == 409 && has(orr.body, "only 2 of product 6 in stock (wanted 3)"), "more than the stock is 409 with the shared message")
+    let mut nine = add.copy()
+    nine.body = lit("{\"product_id\": 1, \"qty\": 9}")
+    let nr = c.request(nine, dl).unwrap()
+    check(inout ck, nr.status == 422 && has(nr.body, "the quantity must be 1 to 10"), "a merged line over 10 is 422")
+
+    let coupon_path = bytes.concat(base.copy(), lit("/coupon"))
+    let mut cp = http.request("PUT", coupon_path.copy())
+    cp.set_header("Content-Type", lit("application/json"))
+    cp.body = lit("{\"code\": \"nope\"}")
+    check(inout ck, c.request(cp, dl).unwrap().status == 422, "an unknown coupon is 422")
+    cp.body = lit("{\"code\": \" take5 \"}")
+    let withc = c.request(cp, dl).unwrap()
+    check(inout ck, has(withc.body, "\"coupon\":\"TAKE5\"") && int_at(withc.body, two("quote", "discount_cents")) == 500, "TAKE5 takes $5 off")
+
+    let mut set = http.request("PUT", bytes.concat(lines.copy(), lit("/3")))
+    set.set_header("Content-Type", lit("application/json"))
+    set.body = lit("{\"qty\": 0}")
+    let sr = c.request(set, dl).unwrap()
+    check(inout ck, sr.status == 200 && !has(sr.body, "\"product_id\":3"), "qty 0 removes a line")
+    let rm = http.request("DELETE", bytes.concat(lines.copy(), lit("/3")))
+    check(inout ck, c.request(rm, dl).unwrap().status == 404, "removing a line that isn't there is 404")
+
+    let buy_path = bytes.concat(base.copy(), lit("/checkout"))
+    let mut buy = http.request("POST", buy_path.copy())
+    buy.set_header("Content-Type", lit("application/json"))
+    buy.body = lit("{\"name\": \"Ada\", \"email\": \"ada@nowhere\"}")
+    let bb = c.request(buy, dl).unwrap()
+    check(inout ck, bb.status == 422 && has(bb.body, "\"pointer\":\"#/email\""), "an invalid email is 422 naming the field")
+    buy.body = lit("{\"name\": \" Ada Lovelace \", \"email\": \"ada@Example.com\"}")
+    let ord = c.request(buy, dl).unwrap()
+    check(inout ck, ord.status == 201, "checkout is 201")
+    check(inout ck, int_at(ord.body, two("quote", "total_cents")) == 2870, "the order costs what the cart showed")
+    check(inout ck, has(ord.body, "\"name\":\"Ada Lovelace\"") && has(ord.body, "\"email\":\"ada@example.com\"") && has(ord.body, "\"created_at\":\"2025-11-01T00:00:00.000Z\""), "the order keeps the cleaned customer")
+    let gone = http.request("GET", base.copy())
+    check(inout ck, c.request(gone, dl).unwrap().status == 404, "the cart is gone after checkout")
+    check(inout ck, int_at(call(inout c, "GET", "/api/products/1", "", dl).body, one("stock")) == 23, "checkout took the stock")
+    let mine = call(inout c, "GET", "/api/orders?email=ada%40example.com", "", dl)
+    check(inout ck, mine.status == 200 && has(mine.body, "\"id\":1"), "orders by email")
+    check(inout ck, bytes.eq(call(inout c, "GET", "/api/orders?email=bob%40example.com", "", dl).body, lit("[]")), "nobody else's orders")
+    check(inout ck, call(inout c, "GET", "/api/orders/1", "", dl).status == 200, "an order")
+    check(inout ck, call(inout c, "GET", "/api/orders/2", "", dl).status == 404, "no second order")
+
+    // ---- four shoppers race for the last two pins: the Lock makes checkout atomic
+    let mut g: task.Group[i64] = task.group(tok.child())
+    for w in 0..4 {
+        g.spawn(|tk: task.Token| -> Result[i64, String] {
+            let mut cc = client.connect(addr, tk.bound(dl))?
+            let cr = cc.request(http.request("POST", lit("/api/carts")), tk.bound(dl))?
+            let p = bytes.concat(lit("/api/carts/"), bytes.from_i64(int_at(cr.body, one("id"))))
+            let mut a = http.request("POST", bytes.concat(p.copy(), lit("/lines")))
+            a.body = lit("{\"product_id\": 6, \"qty\": 1}")
+            a.set_header("Content-Type", lit("application/json"))
+            let ar = cc.request(a, tk.bound(dl))?
+            let mut b = http.request("POST", bytes.concat(p.copy(), lit("/checkout")))
+            b.body = lit("{\"name\": \"Racer\", \"email\": \"racer@example.com\"}")
+            b.set_header("Content-Type", lit("application/json"))
+            let r = cc.request(b, tk.bound(dl))?
+            cc.close()
+            if r.status == 201 { return Ok(1) }
+            if r.status == 409 || ar.status == 409 { return Ok(0) }
+            Err(String.from("unexpected status"))
+        })
+    }
+    let mut bought: i64 = 0
+    for n in g.wait().unwrap() { bought += n }
+    check(inout ck, bought == 2, "exactly two of four shoppers got a pin")
+    check(inout ck, int_at(call(inout c, "GET", "/api/products/6", "", dl).body, one("stock")) == 0, "no pins left")
+
+    // ---- CORS for the dev front end
+    let mut pre = http.request("OPTIONS", lit("/api/carts"))
+    pre.set_header("Origin", lit("http://localhost:5173"))
+    pre.set_header("Access-Control-Request-Method", lit("POST"))
+    pre.set_header("Access-Control-Request-Headers", lit("content-type"))
+    let pr = c.request(pre, dl).unwrap()
+    check(inout ck, pr.status == 204 && bytes.eq(pr.header("access-control-allow-origin").unwrap_or(List.new()), lit("http://localhost:5173")), "a preflight from the dev origin is allowed")
+    let mut evil = pre.copy()
+    evil.headers = http.without(evil.headers, lit("origin"))
+    evil.set_header("Origin", lit("https://evil.example"))
+    check(inout ck, c.request(evil, dl).unwrap().status == 403, "another origin is refused")
+
+    // ---- the JSON-RPC admin API
+    let st = rpc(inout c, "{\"jsonrpc\":\"2.0\",\"method\":\"admin.stats\",\"id\":1}", true, dl)
+    check(inout ck, int_at(st.body, two("result", "orders")) == 3, "admin.stats counts three orders")
+    check(inout ck, rpc(inout c, "{\"jsonrpc\":\"2.0\",\"method\":\"admin.stats\",\"id\":1}", false, dl).status == 401, "the admin API needs the token")
+    let rs = rpc(inout c, "{\"jsonrpc\":\"2.0\",\"method\":\"admin.restock\",\"params\":{\"product_id\":6,\"qty\":5},\"id\":2}", true, dl)
+    check(inout ck, int_at(rs.body, two("result", "stock")) == 5, "admin.restock")
+    let rr = rpc(inout c, "{\"jsonrpc\":\"2.0\",\"method\":\"admin.restock\",\"params\":[6, 0],\"id\":3}", true, dl)
+    check(inout ck, int_at(rr.body, two("error", "code")) == -32001 && has(rr.body, "the quantity must be 1 to 10000"), "a refused restock is -32001")
+    let sp = rpc(inout c, "{\"jsonrpc\":\"2.0\",\"method\":\"admin.set_price\",\"params\":[1, 1000],\"id\":4}", true, dl)
+    check(inout ck, int_at(sp.body, two("result", "price_cents")) == 1000, "admin.set_price")
+
+    // ---- the front end's files
+    let idx = call(inout c, "GET", "/", "", dl)
+    check(inout ck, idx.status == 200 && has(idx.body, "<title>shop</title>") && bytes.eq(idx.header("cache-control").unwrap(), lit("no-cache")), "/ is index.html")
+    let js = call(inout c, "GET", "/assets/app-1.js", "", dl)
+    check(inout ck, has(js.header("content-type").unwrap(), "text/javascript") && has(js.header("cache-control").unwrap(), "immutable"), "hashed assets are cached")
+    check(inout ck, bytes.eq(call(inout c, "GET", "/shared.wasm", "", dl).header("content-type").unwrap(), lit("application/wasm")), "wasm is application/wasm")
+    check(inout ck, call(inout c, "GET", "/../eider.toml", "", dl).status == 404, "no ..")
+    check(inout ck, call(inout c, "GET", "/assets/..%2F..%2Feider.toml", "", dl).status == 404, "no encoded ..")
+    check(inout ck, call(inout c, "GET", "/.git/config", "", dl).status == 404, "no dot files")
+    let api404 = call(inout c, "GET", "/api/nope", "", dl)
+    check(inout ck, api404.status == 404 && has(api404.body, "\"status\":404"), "an unknown API path is a problem+json 404, not the page")
+    check(inout ck, call(inout c, "DELETE", "/api/products", "", dl).status == 405, "a wrong method is 405")
+
+    // ---- /openapi.json and /metrics
+    let doc = call(inout c, "GET", "/openapi.json", "", dl)
+    check(inout ck, doc.status == 200 && has(doc.body, "\"operationId\":\"checkout\"") && has(doc.body, "\"maximum\":10"), "the description has checkout and the shared MAX_QTY")
+    let m = call(inout c, "GET", "/metrics", "", dl)
+    check(inout ck, has(m.body, "http_requests_total"), "prometheus metrics")
+    c.close()
+
+    // ---- graceful shutdown and the access log
+    tok.cancel()
+    let stats = running.join()
+    check(inout ck, client.get(addr, "/health", dl).is_err(), "stopped")
+    let log_lines = bytes.lines(log.get().bytes())
+    check(inout ck, log_lines.len() as i64 == stats.requests, "one access-log line per request")
+    let first = json.parse(log_lines[0]).unwrap()
+    check(inout ck, json.field(first, first.root, "id").is_some() && json.field(first, first.root, "status").is_some(), "the access log is JSON with ids")
+
+    let mut summary = bytes.from_i64(ck.run)
+    bytes.append(inout summary, lit(" checks, "))
+    bytes.append(inout summary, bytes.from_i64(ck.failed))
+    bytes.append(inout summary, lit(" failed"))
+    io.outln(summary)
+    if ck.failed > 0 { 1 } else { 0 }
+}
