@@ -22,13 +22,13 @@ import server.assets
 /// says which origins may call the API from a browser (the Vite dev server), `admin`
 /// checks the bearer token of /rpc and gives the principal.
 pub type Parts[W] = {
-    log: sync.Lock[W],
-    metrics: metrics.Metrics,
-    ids: middleware.Ids,
-    cors: middleware.Cors,
-    admin: fn(List[u8]) -> Option[List[u8]],
-    web_root: List[u8],
-    now_ns: fn() -> i64,
+    log: sync.Lock[W]
+    metrics: metrics.Metrics
+    ids: middleware.Ids
+    cors: middleware.Cors
+    admin: fn(List[u8]) -> Option[List[u8]]
+    web_root: List[u8]
+    now_ns: fn() -> i64
 }
 
 /// The service with every route, before the middleware (also what `--openapi` prints).
@@ -40,7 +40,7 @@ pub fn routes(s: store.Store, p_admin: fn(List[u8]) -> Option[List[u8]], p_metri
     svc
 }
 
-/// The application.
+/// The application. (TODO(eider-http#8): the access log through a `std/log` Logger, like main's lines)
 pub fn app[W: stream.Writer + Copy](s: store.Store, p: Parts[W]) -> http.Handler uses io, clock, fs {
     let svc = routes(s, p.admin, p.metrics, p.web_root, p.now_ns)
     let inner = middleware.cors(p.cors, svc.handler())

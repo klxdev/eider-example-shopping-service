@@ -1,21 +1,12 @@
 // The shared Eider package (shared/*.ei), compiled to WebAssembly by
 // `eider build --wasm shared-wasm/wasm.ei`, as typed TypeScript functions.
 //
-// Eider 0.3 exports take and return integers only, so (see shared-wasm/wasm.ei):
-// - integer functions are called directly (BigInt for i64);
-// - text and lists go through a buffer protocol: the request (shared-wasm/wire.ei's
-//   `<key> <value>` lines) is handed to the module through two imports it calls,
-//   `host_input_len` and `host_input_byte`, and the answer comes back as JSON text through
-//   `print`, which the module writes with the `eider_write` import.
-//
-// The module is instantiated here rather than with the generated shared.js loader, because
-// the loader keeps the module's memory to itself, so an `eider_write` passed to it gets a
-// pointer it can't read (filed as eider-lang#138). The export names and types come
-// from the generated shared.d.ts.
+// The module's text exports take and return a `string` (the generated loader copies it in
+// and out of the module's memory): a request of `<key> <value>` lines (shared-wasm/wire.ei)
+// in, JSON out. The integer exports are called directly (BigInt for i64). The export names
+// and types come from the generated shared.d.ts.
 
-import type { EiderExports } from "./wasm/shared.js";
-
-type Raw = { [K in keyof EiderExports as `eider_${K}`]: EiderExports[K] } & { memory: WebAssembly.Memory };
+import { load, type EiderExports } from "./wasm/shared.js";
 
 export type ShopErrorInfo = { code: number; field: string; message: string };
 export type Answer<T> = ({ ok: true } & T) | { ok: false; errors: ShopErrorInfo[] };
@@ -47,84 +38,56 @@ export const ErrorCode = {
 } as const;
 
 export class Shop {
-  private input = new Uint8Array();
-  private output = "";
-  private constructor(private raw: Raw) {}
+  private constructor(private raw: EiderExports) {}
 
   /** Instantiates the module from its bytes (`fetch(url)` in a page, a file in Node). */
   static async load(bytes: BufferSource): Promise<Shop> {
-    let shop: Shop | undefined;
-    const dec = new TextDecoder();
-    const env = {
-      eider_write: (p: number, n: number) => {
-        shop!.output += dec.decode(new Uint8Array(shop!.raw.memory.buffer, p, n));
-      },
-      eider_now_ms: () => BigInt(Date.now()),
-      host_input_len: () => shop!.input.length,
-      host_input_byte: (i: number) => shop!.input[i] ?? -1,
-    };
-    const { instance } = await WebAssembly.instantiate(bytes, { env });
-    shop = new Shop(instance.exports as unknown as Raw);
-    return shop;
-  }
-
-  /** Runs a buffer function on `request` and parses its JSON answer. */
-  private ask<T>(request: string, f: () => number): Answer<T> {
-    this.input = new TextEncoder().encode(request);
-    this.output = "";
-    f();
-    return JSON.parse(this.output.trim()) as Answer<T>;
-  }
-
-  private text(f: () => number): string {
-    this.output = "";
-    f();
-    return this.output.trimEnd();
+    return new Shop(await load(bytes));
   }
 
   /** "$1,234.05", by shared/money's `format`. */
   formatCents(cents: number): string {
-    return this.text(() => this.raw.eider_format_cents(BigInt(cents)));
+    return this.raw.format_cents(String(cents));
   }
 
   /** unit * qty, checked by shared/money; null when out of range. */
   lineTotal(unitCents: number, qty: number): number | null {
-    const r = this.raw.eider_line_total_cents(BigInt(unitCents), BigInt(qty));
+    const r = this.raw.line_total_cents(BigInt(unitCents), BigInt(qty));
     return r < 0n ? null : Number(r);
   }
 
   /** Whether `qty` of a product fits a cart with `have` in stock (shared/validate). */
   checkQty(productId: number, qty: number, have: number): Answer<object> {
-    this.output = "";
-    this.raw.eider_check_qty(BigInt(productId), BigInt(qty), BigInt(have));
-    return JSON.parse(this.output.trim()) as Answer<object>;
+    return JSON.parse(this.raw.check_qty(`product ${productId}\nqty ${qty}\nstock ${have}`));
   }
 
   /** The totals of a cart, by shared/cart's `quote`: what the server will charge. */
   quote(lines: LineInput[], coupon?: string | null): Answer<Totals> {
     const req = lines.map((l) => `line ${l.product_id} ${l.unit_cents} ${l.qty}`);
-    if (coupon) req.unshift(`coupon ${coupon}`);
-    return this.ask<Totals>(req.join("\n"), () => this.raw.eider_quote());
+    if (coupon) req.unshift(`coupon ${oneLine(coupon)}`);
+    return JSON.parse(this.raw.quote(req.join("\n")));
   }
 
   /** The cleaned name and email, or every field error (shared/validate's `customer`). */
   checkCustomer(name: string, email: string): Answer<{ name: string; email: string }> {
-    const oneLine = (s: string) => s.replace(/[\r\n]/g, " ");
-    return this.ask(`name ${oneLine(name)}\nemail ${oneLine(email)}`, () => this.raw.eider_check_customer());
+    return JSON.parse(this.raw.check_customer(`name ${oneLine(name)}\nemail ${oneLine(email)}`));
   }
 
   /** The coupon with this code (shared/coupon's `find`). */
   findCoupon(code: string): Answer<{ coupon: CouponInfo }> {
-    return this.ask(`coupon ${code.replace(/[\r\n]/g, " ")}`, () => this.raw.eider_find_coupon());
+    return JSON.parse(this.raw.find_coupon(`coupon ${oneLine(code)}`));
   }
 
   get maxQty(): number {
-    return Number(this.raw.eider_max_qty());
+    return Number(this.raw.max_qty());
   }
   get taxBasisPoints(): number {
-    return Number(this.raw.eider_tax_bp());
+    return Number(this.raw.tax_bp());
   }
   get freeShippingFromCents(): number {
-    return Number(this.raw.eider_free_shipping_from_cents());
+    return Number(this.raw.free_shipping_from_cents());
   }
 }
+
+/** A request is lines, so a value can't hold a line break. */
+const oneLine = (s: string) => s.replace(/[\r\n]/g, " ");

@@ -12,12 +12,12 @@
 //!
 //! The package is pure: no function in it declares a capability, so its eider.toml grant
 //! in the server is empty, and the compiler holds it to that (E0204). The WebAssembly
-//! module, whose host imports need `ffi` and `io`, is the package ../shared-wasm.
+//! module is the package ../shared-wasm.
 
 import shared.money
 
 /// Everything the shop can refuse. Each variant has a stable code (`code`), which is how an
-/// error crosses the WebAssembly boundary (exports take and return integers only).
+/// error crosses the WebAssembly boundary in the integer exports (the text exports carry it in JSON).
 pub type ShopError =
     | AmountTooLarge
     | QtyOutOfRange(min: i64, max: i64)

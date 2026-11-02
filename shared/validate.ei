@@ -70,10 +70,6 @@ pub fn email(e: String) -> Result[String, shared.ShopError] {
 /// A customer at checkout.
 pub type Customer = { name: String, email: String }
 
-impl json.Encode for Customer {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
-}
-
 /// The customer, or every field that is wrong (for a form that marks each one).
 pub fn customer(n: String, e: String) -> Result[Customer, List[shared.ShopError]] {
     let mut errs: List[shared.ShopError] = List.new()

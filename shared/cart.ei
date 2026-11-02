@@ -36,16 +36,12 @@ pub type Line = { product_id: i64, unit: money.Money, qty: i64 }
 /// is below its minimum (the cart changed after the coupon was added). In JSON (the
 /// server's API) its members are the amounts in cents: `{"subtotal_cents":...}`.
 pub type Quote = {
-    @json(name = "subtotal_cents") subtotal: money.Money,
-    @json(name = "discount_cents") discount: money.Money,
-    @json(name = "shipping_cents") shipping: money.Money,
-    @json(name = "tax_cents") tax: money.Money,
-    @json(name = "total_cents") total: money.Money,
-    coupon_applied: bool,
-}
-
-impl json.Encode for Quote {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+    @json(name = "subtotal_cents") subtotal: money.Money
+    @json(name = "discount_cents") discount: money.Money
+    @json(name = "shipping_cents") shipping: money.Money
+    @json(name = "tax_cents") tax: money.Money
+    @json(name = "total_cents") total: money.Money
+    coupon_applied: bool
 }
 
 fn find(items: List[Item], product_id: i64) -> Option[usize] {

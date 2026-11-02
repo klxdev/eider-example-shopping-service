@@ -4,8 +4,6 @@ import shared
 import shared.money
 import server.store
 
-// TODO(eider-lang#140): test blocks next to the code, without this empty main
-fn main() {}
 
 fn s() -> store.Store { store.store() }
 

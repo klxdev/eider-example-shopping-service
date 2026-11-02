@@ -21,7 +21,7 @@ SERVER_PID=""
 PORT=${PORT:-8080}
 
 start_server() {
-    (cd "$ROOT/server" && exec env SHOP_ADMIN_TOKEN=${SHOP_ADMIN_TOKEN:-dev} SHOP_CORS_ORIGIN=http://localhost:5173 ./target/server "$PORT") &
+    (cd "$ROOT/server" && exec env SHOP_ADMIN_TOKEN=${SHOP_ADMIN_TOKEN:-dev} SHOP_CORS_ORIGIN=http://localhost:5173 ./target/server --port="$PORT") &
     SERVER_PID=$!
 }
 stop_server() {

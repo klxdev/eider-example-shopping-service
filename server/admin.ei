@@ -37,10 +37,6 @@ fn refused(e: store.StoreError) -> jsonrpc.Error {
 /// The `data` of a refused change: the shared rule's code.
 type RuleCode = { code: i64 }
 
-impl json.Encode for RuleCode {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
-}
-
 fn lift(r: Result[store.Product, store.StoreError]) -> Result[store.Product, jsonrpc.Error] {
     match r {
         Ok(p) => Ok(p)

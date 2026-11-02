@@ -88,3 +88,10 @@ pub fn describe(c: Coupon) -> String {
     let least = money.format(money.Money(c.min_cents))
     "{what} orders of {least} or more"
 }
+
+/// A coupon as the API and the web page show it: its kind as text (`describe`). In JSON:
+/// `{"id":1,"code":"SAVE10","description":"10% off","min_cents":0}`.
+pub type Info = { id: i32, code: String, description: String, min_cents: i64 }
+
+/// `c` as the `Info` people see.
+pub fn info(c: Coupon) -> Info { Info(c.id, c.code.copy(), describe(c), c.min_cents) }

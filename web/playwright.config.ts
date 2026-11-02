@@ -12,7 +12,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${port}`, trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `../server/target/server ${port}`,
+    command: `../server/target/server --port=${port}`,
     url: `http://127.0.0.1:${port}/health`,
     env: { SHOP_WEB_DIR: "dist", SHOP_ADMIN_TOKEN: "e2e" },
     reuseExistingServer: false,

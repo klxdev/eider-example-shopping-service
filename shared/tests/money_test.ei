@@ -1,8 +1,6 @@
 // money: checked arithmetic in integer cents.
 import shared.money
 
-// TODO(eider-lang#140): test blocks next to the code, without this empty main
-fn main() {}
 
 fn m(c: i64) -> money.Money { money.of(c).unwrap() }
 

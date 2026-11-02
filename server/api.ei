@@ -192,10 +192,6 @@ pub fn cart_json(c: store.CartView) -> List[u8] { json.to_json(c) }
 /// An order as the API shows it: the order's members and when it was placed.
 type OrderBody = { @json(flatten) order: store.Order, created_at: String }
 
-impl json.Encode for OrderBody {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
-}
-
 fn order_body(o: store.Order) -> OrderBody {
     let at = String.from_bytes(middleware.rfc3339(o.created_ns)).unwrap_or(String.from(""))
     OrderBody(o, at)
@@ -209,21 +205,31 @@ fn orders_json(os: List[store.Order]) -> List[u8] {
     json.to_json(bodies)
 }
 
-/// A coupon as the API shows it: its kind as text (shared/coupon.ei, `describe`).
-type CouponBody = { id: i32, code: String, description: String, min_cents: i64 }
-
-impl json.Encode for CouponBody {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
-}
-
 fn coupons_json(cs: List[coupon.Coupon]) -> List[u8] {
-    let mut bodies: List[CouponBody] = List.new()
-    for c in cs { bodies.push(CouponBody(c.id, c.code.copy(), coupon.describe(c), c.min_cents)) }
-    json.to_json(bodies)
+    let mut infos: List[coupon.Info] = List.new()
+    for c in cs { infos.push(coupon.info(c)) }
+    json.to_json(infos)
 }
 
 // ---- decoders: the operation has validated the body against its schema (closed objects,
-// bounds), so the decoders only read the members they take
+// bounds); the body types below are read with derived `json.Decode`, the path parameters
+// from the route
+
+/// Request bodies, as the API's JSON members.
+type AddIn = { product_id: i64, qty: i64 }
+
+type QtyIn = { qty: i64 }
+
+type CodeIn = { code: String }
+
+type BuyerIn = { name: String, email: String }
+
+/// A decoded body as the operation's result; a failure is a 400 naming the JSON path. The
+/// body type is read by the caller's annotated binding (TODO(eider-lang#149): `T` can't be
+/// written in the call, and an annotation doesn't infer it through `?`)
+fn lift_body[T](r: Result[T, json.DecodeError]) -> Result[T, problem.ApiError] {
+    r.map_err(|e: json.DecodeError| -> problem.ApiError { problem.with_detail(400, json.decode_error_text(e)) })
+}
 
 type LineArgs = { cart: i64, product: i64, qty: i64 }
 
@@ -232,11 +238,15 @@ type Buyer = { cart: i64, name: String, email: String }
 fn decode_id(i: openapi.Input) -> Result[i64, problem.ApiError] { i.path_int("id") }
 
 fn decode_add(i: openapi.Input) -> Result[LineArgs, problem.ApiError] {
-    Ok(LineArgs(i.path_int("id")?, i.int("product_id")?, i.int("qty")?))
+    let r: Result[AddIn, json.DecodeError] = json.from_json(i.req.body)
+    let b = lift_body(r)?
+    Ok(LineArgs(i.path_int("id")?, b.product_id, b.qty))
 }
 
 fn decode_set(i: openapi.Input) -> Result[LineArgs, problem.ApiError] {
-    Ok(LineArgs(i.path_int("id")?, i.path_int("product_id")?, i.int("qty")?))
+    let r: Result[QtyIn, json.DecodeError] = json.from_json(i.req.body)
+    let b = lift_body(r)?
+    Ok(LineArgs(i.path_int("id")?, i.path_int("product_id")?, b.qty))
 }
 
 fn decode_remove(i: openapi.Input) -> Result[LineArgs, problem.ApiError] {
@@ -244,11 +254,15 @@ fn decode_remove(i: openapi.Input) -> Result[LineArgs, problem.ApiError] {
 }
 
 fn decode_coupon(i: openapi.Input) -> Result[(i64, String), problem.ApiError] {
-    Ok((i.path_int("id")?, text(i.str("code")?)?))
+    let r: Result[CodeIn, json.DecodeError] = json.from_json(i.req.body)
+    let b = lift_body(r)?
+    Ok((i.path_int("id")?, b.code))
 }
 
 fn decode_buyer(i: openapi.Input) -> Result[Buyer, problem.ApiError] {
-    Ok(Buyer(i.path_int("id")?, text(i.str("name")?)?, text(i.str("email")?)?))
+    let r: Result[BuyerIn, json.DecodeError] = json.from_json(i.req.body)
+    let b = lift_body(r)?
+    Ok(Buyer(i.path_int("id")?, b.name, b.email))
 }
 
 fn decode_email(i: openapi.Input) -> Result[Option[String], problem.ApiError] {

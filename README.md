@@ -8,8 +8,8 @@ WebAssembly, so the browser and the server compute the same totals and refuse th
 input with the same messages. The front end is a thin TypeScript layer over a client
 generated from the server's `/openapi.json`.
 
-It is built with the published Eider toolchain (0.3.0, `eider = "0.3"`) and the libraries
-at their v0.3.0 tags: [eider-http](https://github.com/klxdev/eider-http),
+It is built with the published Eider toolchain (0.4.0, `eider = "0.4"`) and the libraries
+at their v0.4.0 tags: [eider-http](https://github.com/klxdev/eider-http),
 [eider-openapi](https://github.com/klxdev/eider-openapi),
 [eider-rpc](https://github.com/klxdev/eider-rpc) and
 [eider-json](https://github.com/klxdev/eider-json). No eider-lang checkout is needed.
@@ -20,9 +20,9 @@ at their v0.3.0 tags: [eider-http](https://github.com/klxdev/eider-http),
                       shared/  (Eider, pure: no capabilities)
           money.ei  coupon.ei  cart.ei  validate.ei   shared.ei (ShopError)
                  |                                  |
-     native (import shared.*)              shared-wasm/ (ffi, io: host imports)
+     native (import shared.*)              shared-wasm/  (pure)
                  |                         eider build --wasm wasm.ei
-                 |                                  |   + wire.ei (text in, JSON out)
+                 |                                  |   + wire.ei (String in, JSON String out)
                  v                                  v
   server/  (Eider)                         web/src/wasm/shared.wasm
     store.ei   carts, orders, stock               |
@@ -31,7 +31,7 @@ at their v0.3.0 tags: [eider-http](https://github.com/klxdev/eider-http),
     admin.ei   JSON-RPC admin (eider-rpc)         +-> shop.ts   typed wrapper of the module
     assets.ei  serves web/dist                         main.ts   five views, plain DOM
     app.ei     middleware (eider-http)    <-- HTTP --  api/client.ts  openapi-fetch over
-    main.ei    listen, SIGTERM drain                   api/schema.d.ts, generated from
+    main.ei    std/config, std/log, std/service                   api/schema.d.ts, generated from
                                                        `server --openapi`
 ```
 
@@ -59,9 +59,9 @@ JSON and in JavaScript.
 ## What it shows of Eider
 
 - **Capabilities.** `shared/` declares none, so nothing in it can touch files, the network
-  or the clock, and its grant in `server/eider.toml` is empty. The WebAssembly entry, whose
-  host imports need `ffi` and `io`, is a package of its own (`shared-wasm/`), because a
-  dependency's grant covers every module of it. Each library is granted what its modules use
+  or the clock, and its grant in `server/eider.toml` is empty. The WebAssembly entry is a
+  package of its own (`shared-wasm/`, also pure) so the server doesn't build the wire
+  format, and a dependency's grant covers every module of it. Each library is granted what its modules use
   (`eider tree`; `eider fetch` computes it and asks again when it grows); the compiler holds
   them to it on every build (E0204). In the server only `assets.ei` uses `fs`, and
   only `main.ei` (and the e2e test) use `net` and `threads` directly.
@@ -86,52 +86,64 @@ JSON and in JavaScript.
   package's constants (`validate.MAX_QTY`, `money.MAX_CENTS`), and the TypeScript client's
   types are generated from the same document, so the page, the description and the checks
   can't drift apart.
-- **Derived JSON.** The API's responses and the admin API's results are written by codecs
-  eider-json derives from the records' fields with comptime reflection (`@json(name =
-  "price_cents")`, `@json(flatten)` for an order's customer; `server/store.ei`,
-  `shared/cart.ei`), not by hand.
+- **Automatic JSON derive.** `Encode` and `Decode` are `@derive` traits of eider-json 0.4, so
+  every record and enum has `json.to_json(x)` and `json.from_json` with no impl: the API's
+  responses, the admin API's results, the request bodies (`AddIn`, `QtyIn`, ... in
+  `server/api.ei`) and the WebAssembly module's answers (`shared-wasm/wire.ei`) come from the
+  records' fields by comptime reflection. `@json(name = "price_cents")`, `@json(flatten)`
+  (an order's customer, the `ok` of a wire reply) and `@json(skip)` shape them; the one
+  impl left is `Money`'s, a deliberate override that writes a bare number
+  (`shared/money.ei`).
 - **Sharing code through WebAssembly.** `eider build --wasm shared-wasm/wasm.ei` compiles the
   same modules the server imports. The page checks quantities against stock, validates the
   checkout form, looks up coupons and computes the cart's totals in the browser, and shows
   that they match the server's.
+- **A service's basics from std.** `std/config` layers defaults, `SHOP_*` variables and
+  `--flags` (a flag the defaults don't name is an error); `std/log` writes the startup and
+  shutdown lines as JSON; `std/service.cancel_on_term` drains on SIGTERM/SIGINT; `main`
+  returns `Result[(), String]`, so a bad setting or a port in use ends the process with
+  `error: ...` and status 1 (`server/main.ei`).
 - **JSON-RPC, middleware, operations.** eider-rpc's method table for the admin API;
   eider-http's request ids, JSON access log, metrics, problem+json for its own 404/405, CORS
-  for the dev server, bearer auth; graceful shutdown on SIGTERM/SIGINT.
-- **Tests in Eider.** `test` blocks for the rules, the store and the API's encoders, and an
-  end-to-end test of the whole service over loopback on an ephemeral port with no sleeps.
+  for the dev server, bearer auth.
+- **Tests in Eider.** `test` blocks for the rules, the store, the API's encoders and the wasm
+  module's answers (no `main` needed in a test file), and an end-to-end test of the whole
+  service over loopback on an ephemeral port with no sleeps.
 
 ### The WebAssembly boundary today
 
-In Eider 0.3 an `export fn` takes and returns only integers and `bool`, and a module keeps
-no state between calls. So the module has two kinds of export (`shared-wasm/wasm.ei`):
+In Eider 0.4 an `export fn` takes and returns integers, `bool`, `String` (a JavaScript
+`string`) and `List[u8]` (a `Uint8Array`), but not yet records or other lists. So the module
+has two kinds of export (`shared-wasm/wasm.ei`):
 
-- integer functions called directly: `line_total_cents(1299, 2)`, `check_qty(id, qty, stock)`,
-  the shop's constants; a negative result is minus an error code;
-- buffer functions for text and lists (`quote`, `check_customer`, `find_coupon`,
-  `format_cents`): the request is `<key> <value>` lines (`line 1 1299 2`, `coupon TAKE5`)
-  that the module reads through two imported host functions, `host_input_len()` and
-  `host_input_byte(i)`, and the answer is JSON text written with `print`
-  (`shared-wasm/wire.ei`, tested natively in `shared-wasm/tests/wire_test.ei`).
+- integer functions called directly: `line_total_cents(1299, 2)` and the shop's constants; a
+  negative result is minus an error code;
+- text functions, `String -> String`: `quote`, `check_customer`, `find_coupon`, `check_qty`
+  and `format_cents`. The request is `<key> <value>` lines (`line 1 1299 2`, `coupon TAKE5`,
+  `product 1` / `qty 3` / `stock 5`), the answer is JSON that eider-json writes from derived
+  types (`Reply[T]`, `Failure`, `ErrorInfo`, `coupon.Info`, `cart.Quote`;
+  `shared-wasm/wire.ei`, tested natively in `shared-wasm/tests/wire_test.ei`).
 
-`web/src/shop.ts` wraps both in typed functions. It instantiates the module itself, using
-the generated `shared.d.ts` for the export types, because the generated loader doesn't let
-the page read what the module prints. When typed exports land
-([eider-lang#136](https://github.com/klxdev/eider-lang/issues/136)), `wire.ei` and most of
-`shop.ts` go away. Spots that will simplify as the language grows are marked
-`// TODO(<repo>#<n>)` in the code.
+`web/src/shop.ts` wraps them in typed functions over the generated loader (`shared.js`,
+`shared.d.ts`): about 90 lines, with no hand-written instantiation, input buffer or output
+capture. When records can cross ([typescript_models](https://github.com/klxdev/eider-lang/blob/main/docs/design/typescript_models.md)),
+the line format and the JSON parsing go away too. Spots that will simplify as the language
+grows are marked `// TODO(<repo>#<n>)` in the code.
 
 ## Running it
 
-Requirements: `eider` with the 0.3 toolchain (from eider-lang's latest release:
+Requirements: `eider` with the 0.4 toolchain (from eider-lang's latest release:
 `sh install.sh --toolchain`), clang 17+ with the wasm32 target and `wasm-ld`, Node 20.19+,
 and a GitHub token with access to the klxdev repositories (`GH_TOKEN`, or `gh auth login`).
 
 ```sh
 sh scripts/build.sh          # fetch, shared -> wasm, server, client generation, web/dist
-cd server && ./target/server # http://127.0.0.1:8080 (PORT or an argument changes it)
+cd server && ./target/server # http://127.0.0.1:8080 (--port=N or SHOP_PORT changes it)
 ```
 
-`SHOP_ADMIN_TOKEN` sets the admin API's token (else a random one is printed):
+Settings are `--port`, `--admin.token`, `--web.dir` and `--cors.origin`, or `SHOP_PORT`,
+`SHOP_ADMIN_TOKEN`, `SHOP_WEB_DIR` and `SHOP_CORS_ORIGIN` (flags win). Without an admin token a
+random one is logged at startup:
 
 ```sh
 curl -s localhost:8080/rpc -H "Authorization: Bearer $SHOP_ADMIN_TOKEN" \
@@ -142,7 +154,7 @@ curl -s localhost:8080/rpc -H "Authorization: Bearer $SHOP_ADMIN_TOKEN" \
 Development, with both sides rebuilding on change:
 
 ```sh
-sh scripts/dev.sh            # Vite on http://localhost:5173, the server on :8080 (PORT=...)
+sh scripts/dev.sh            # Vite on http://localhost:5173, the server on :8080 (PORT=... moves it)
 ```
 
 A change to a `.ei` file in `server/`, `shared/` or `shared-wasm/` rebuilds and restarts the server (and
@@ -158,7 +170,7 @@ sh scripts/test.sh           # build, then everything below
 | What | Where | Runs with |
 |---|---|---|
 | money, cart, coupons, validation | `shared/tests/*_test.ei` | `eider test` |
-| the wasm module's protocol | `shared-wasm/tests/*_test.ei` | `eider test` |
+| the wasm module's requests and answers | `shared-wasm/tests/*_test.ei` | `eider test` |
 | the store (carts, checkout atomicity, admin), API errors and encoders, static paths | `server/tests/{store,api}_test.ei` | `eider test` |
 | the whole service over loopback: 50 checks | `server/tests/e2e_test.ei` | `eider run` |
 | the wasm module from TypeScript, the client | `web/src/**/*.test.ts` | vitest |
@@ -189,7 +201,7 @@ LD_LIBRARY_PATH=~/chromium-libs/usr/lib64 sh scripts/test.sh
 
 ```text
 shared/      the shop's rules (Eider package `shared`), pure
-shared-wasm/ the WebAssembly module (package `shared_wasm`): wasm.ei, the exports; wire.ei
+shared-wasm/ the WebAssembly module (package `shared_wasm`): wasm.ei, the exports; wire.ei, requests and answers
 server/      the service (Eider package `server`), tests/: unit and end-to-end tests
 web/         the front end: src/main.ts, src/shop.ts, src/api/ (generated types + client),
              scripts/gen-api.mjs, e2e/ (Playwright)
@@ -201,30 +213,36 @@ Generated files (`web/src/wasm/`, `web/src/api/schema.d.ts`, `web/dist/`,
 
 ## Gaps found in Eider
 
-Filed while building this, and marked in the code with `TODO(<repo>#<n>)`:
+Filed while building this, and marked in the code with `TODO(<repo>#<n>)` while they are
+open. Closed ones were fixed in Eider 0.4 and the code uses the fix.
 
-| Issue | What |
-|---|---|
-| [eider-lang#136](https://github.com/klxdev/eider-lang/issues/136) | WebAssembly exports: Strings, Lists and records across the boundary |
-| [eider-lang#137](https://github.com/klxdev/eider-lang/issues/137) | `--wasm` modules that use core.sys's text helpers import unresolved `ec_*` functions |
-| [eider-lang#138](https://github.com/klxdev/eider-lang/issues/138) | The wasm loader keeps memory private, so an `eider_write` override can't read the text |
-| [eider-lang#139](https://github.com/klxdev/eider-lang/issues/139) | Host imports (`extern` in `--wasm` modules): document and type them |
-| [eider-lang#140](https://github.com/klxdev/eider-lang/issues/140) | `eider test` and `eider check` for a library module without `main` |
-| [eider-lang#143](https://github.com/klxdev/eider-lang/issues/143) | Infer a match arm's type from its sibling arms |
-| [eider-lang#144](https://github.com/klxdev/eider-lang/issues/144) | Checked integer arithmetic returning Option |
-| [eider-lang#145](https://github.com/klxdev/eider-lang/issues/145) | A receiver's own method call in an argument of its `inout` call (E0301) |
-| [eider-lang#146](https://github.com/klxdev/eider-lang/issues/146) | Continue a method chain on the next line (closed: not planned) |
-| [eider-lang#147](https://github.com/klxdev/eider-lang/issues/147) | `eider run --watch` |
-| [eider-http#7](https://github.com/klxdev/eider-http/issues/7) | A static-file handler |
-| [eider-rpc#2](https://github.com/klxdev/eider-rpc/issues/2) | Serving JSON-RPC shouldn't need a `net, io, clock` grant |
-| [eider-openapi#3](https://github.com/klxdev/eider-openapi/issues/3) | String accessors on `openapi.Input` |
+| Issue | What | State |
+|---|---|---|
+| [eider-lang#136](https://github.com/klxdev/eider-lang/issues/136) | WebAssembly exports: Strings, Lists and records across the boundary | closed (Strings and `List[u8]` in 0.4) |
+| [eider-lang#137](https://github.com/klxdev/eider-lang/issues/137) | `--wasm` modules that use core.sys's text helpers import unresolved `ec_*` functions | closed |
+| [eider-lang#138](https://github.com/klxdev/eider-lang/issues/138) | The wasm loader keeps memory private, so an `eider_write` override can't read the text | closed |
+| [eider-lang#139](https://github.com/klxdev/eider-lang/issues/139) | Host imports (`extern` in `--wasm` modules): document and type them | open, not needed here any more |
+| [eider-lang#140](https://github.com/klxdev/eider-lang/issues/140) | `eider test` and `eider check` for a library module without `main` | closed |
+| [eider-lang#143](https://github.com/klxdev/eider-lang/issues/143) | Infer a match arm's type from its sibling arms | open |
+| [eider-lang#144](https://github.com/klxdev/eider-lang/issues/144) | Checked integer arithmetic returning Option | open |
+| [eider-lang#145](https://github.com/klxdev/eider-lang/issues/145) | A receiver's own method call in an argument of its `inout` call (E0301) | open |
+| [eider-lang#146](https://github.com/klxdev/eider-lang/issues/146) | Continue a method chain on the next line | closed (not planned) |
+| [eider-lang#147](https://github.com/klxdev/eider-lang/issues/147) | `eider run --watch` | open |
+| [eider-lang#149](https://github.com/klxdev/eider-lang/issues/149) | Explicit type arguments in calls (`json.from_json[T](x)`), inferring a generic result through `?` | open |
+| [eider-http#7](https://github.com/klxdev/eider-http/issues/7) | A static-file handler | open |
+| [eider-http#8](https://github.com/klxdev/eider-http/issues/8) | `access_log` should write through a `std/log` Logger | open |
+| [eider-json#2](https://github.com/klxdev/eider-json/issues/2) | `to_string`/`from_string`: JSON as String, not List[u8] | open |
+| [eider-rpc#2](https://github.com/klxdev/eider-rpc/issues/2) | Serving JSON-RPC shouldn't need a `net, io, clock` grant | open |
+| [eider-openapi#3](https://github.com/klxdev/eider-openapi/issues/3) | String accessors on `openapi.Input` | open |
 
 Already tracked, and waited on here: `let ... else` (#106), List literals (#49), `if` as an
-argument (#48), computed `assert`/`panic` messages (#47), a SIGTERM helper (#24), grants per
-imported module (#60), and schemas derived from the types (eider-openapi#1). Eider 0.3 brought
-what the example used to wait for as well: string interpolation (eider-lang#17), the
-pattern-matching finish (#105), JSON derive (eider-json#1), automatic grants over every module
-(#141) and token-authenticated fetches (#142).
+argument (#48), computed `assert`/`panic` messages (#47), grants per imported module (#60),
+and schemas derived from the types (eider-openapi#1). Eider 0.4 brought what the example
+waited for: automatic JSON derive (#99), Strings across the WebAssembly boundary, core.sys
+in `--wasm` (#137), `std/log`, `std/config` and `std/service` (#24), `main` returning
+`Result` (#12), records spanning lines without commas (#76) and floats (#43; money stays
+integer cents). `Trait.m(x)`, associated types and `dyn Trait` are not used: nothing here
+needed them.
 
 ## Versions
 

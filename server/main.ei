@@ -1,152 +1,96 @@
 // server: the Eider Shop on 127.0.0.1.
 //
-//   eider run server/main.ei            (or the binary: target/server [port])
-//   server [port]                       default 8080, or $PORT; 0: any free port
+//   eider run server/main.ei            (or the binary: target/server [--port=8080])
+//   server --port=0                     any free port
 //   server --openapi                    print the OpenAPI description and exit
 //                                       (web/scripts/gen-api.mjs makes the TypeScript client from it)
 //
-// Environment:
-//   SHOP_WEB_DIR      the built front end to serve (default ../web/dist, then web/dist)
-//   SHOP_ADMIN_TOKEN  the bearer token of the JSON-RPC admin API at /rpc (default: a random
-//                     one, printed on stderr)
-//   SHOP_CORS_ORIGIN  an origin allowed to call the API from a browser (default
-//                     http://localhost:5173, the Vite dev server)
+// Settings (std/config: defaults, then the environment, then flags; a flag or variable the
+// defaults don't name is an error):
 //
-// One JSON access-log line per request goes to stdout; everything else to stderr. SIGTERM or
-// SIGINT shuts it down gracefully: requests in flight finish, then it prints what it
-// served. Plain HTTP only: put it behind a TLS-terminating proxy to expose it.
+//   --port             SHOP_PORT          default 8080; 0: any free port
+//   --admin.token      SHOP_ADMIN_TOKEN   the bearer token of the JSON-RPC admin API at /rpc
+//                                         (default: a random one, logged at startup)
+//   --web.dir          SHOP_WEB_DIR       the built front end to serve (default ../web/dist, then web/dist)
+//   --cors.origin      SHOP_CORS_ORIGIN   an origin allowed to call the API from a browser (default
+//                                         http://localhost:5173, the Vite dev server)
+//
+// One JSON access-log line per request goes to stdout (eider-http); startup and shutdown are
+// JSON lines on stderr (std/log). SIGTERM or SIGINT shuts it down gracefully (std/service):
+// requests in flight finish, then it logs what it served. Plain HTTP only: put it behind a
+// TLS-terminating proxy to expose it.
 
-import std.bytes
+import std.config
 import std.encoding
-import std.env
-import std.fd
 import std.fs
 import std.io
+import std.log
 import std.net
 import std.random
-import std.signal
+import std.service
 import std.stream
 import std.sync
 import std.task
 import std.time
+import std.env
 import http.server
 import http.middleware
 import http.metrics
 import server.store
 import server.app
 
-fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+type Settings = { port: i64, admin_token: String, web_dir: String, cors_origin: String, openapi: bool }
 
-fn say(s: str) uses io { io.errln(lit(s)) }
-
-fn env_or(name: str, fallback: str) -> List[u8] uses io {
-    match env.get(lit(name)) {
-        Some(v) => {
-            if v.len() > 0 { return v }
-        }
-        None => {}
-    }
-    lit(fallback)
+fn settings() -> Result[Settings, String] uses io {
+    let base = config.new().default("port", "8080").default("admin.token", "").default("web.dir", "").default("cors.origin", "http://localhost:5173").default("openapi", "false")
+    let c = base.env("SHOP")?.flags(env.args())?
+    let port = c.int("port")?
+    if port < 0 || port > 65535 { return Err(String.from("config: port must be 0 to 65535")) }
+    Ok(Settings(port, c.str("admin.token")?, c.str("web.dir")?, c.str("cors.origin")?, c.bool("openapi")?))
 }
 
-fn port_arg() -> i32 uses io {
-    let a = env.args()
-    let text = if a.len() >= 2 { a[1].copy() } else { env_or("PORT", "8080") }
-    match bytes.parse_u64(text) {
-        Some(p) => {
-            if p > 65535 {
-                say("server: the port is 0 to 65535")
-                env.exit(2)
-            }
-            p as i32
-        }
-        None => {
-            say("usage: server [port | --openapi]")
-            env.exit(2)
-            0
-        }
-    }
-}
-
-fn admin_token() -> List[u8] uses io {
-    let t = env_or("SHOP_ADMIN_TOKEN", "")
-    if t.len() > 0 { return t }
-    let r = encoding.hex(random.bytes(16).unwrap()).bytes()
-    io.errln(bytes.concat(lit("server: SHOP_ADMIN_TOKEN is not set; the admin token is "), r))
-    r
-}
-
-fn web_root() -> List[u8] uses io, fs {
-    let set = env_or("SHOP_WEB_DIR", "")
-    if set.len() > 0 { return set }
+fn web_root(set: String) -> List[u8] uses fs {
+    if set.len() > 0 { return set.bytes() }
     for p in ["../web/dist", "web/dist"] {
-        if fs.is_dir(lit(p)) { return lit(p) }
+        if fs.is_dir(p.bytes()) { return p.bytes() }
     }
-    lit("web/dist")
+    "web/dist".bytes()
 }
 
 fn wall_ns() -> i64 uses clock { time.wall_ns() }
 
-fn main() uses io, fs, net, clock, threads {
-    let args = env.args()
-    if args.len() >= 2 && bytes.eq(args[1], lit("--openapi")) {
+fn main() -> Result[(), String] uses io, fs, net, clock, threads {
+    let cfg = settings()?
+    if cfg.openapi {
         let no_admin = |t: List[u8]| -> Option[List[u8]] { None }
-        let svc = app.routes(store.store(), no_admin, metrics.new(), lit("web/dist"), wall_ns)
+        let svc = app.routes(store.store(), no_admin, metrics.new(), "web/dist".bytes(), wall_ns)
         io.outln(svc.document_json())
-        return
+        return Ok(())
     }
+    let lg = log.new(log.Info).with(log.fields().text("service", String.from("shop")))
 
-    let srv = match server.listen(net.ipv4(127, 0, 0, 1, port_arg()), server.config()) {
-        Ok(s) => s
-        Err(e) => {
-            io.errln(e.bytes())
-            env.exit(1)
-            return
-        }
+    let srv = server.listen(net.ipv4(127, 0, 0, 1, cfg.port as i32), server.config())?
+    let mut token = cfg.admin_token.copy()
+    if token.len() == 0 {
+        token = encoding.hex(random.bytes(16).unwrap())
+        lg.warn("SHOP_ADMIN_TOKEN is not set; using a random admin token", log.fields().text("admin_token", token.copy()))
     }
     let mut tokens: List[(List[u8], List[u8])] = List.new()
-    tokens.push((admin_token(), lit("admin")))
-    let origin = env_or("SHOP_CORS_ORIGIN", "http://localhost:5173")
+    tokens.push((token.bytes(), "admin".bytes()))
     let cors = middleware.cors_config()
     let mut cors_ok = cors.copy()
-    cors_ok.origins.push(origin)
-    let root = web_root()
+    cors_ok.origins.push(cfg.cors_origin.bytes())
+    let root = web_root(cfg.web_dir.copy())
     let parts = app.Parts(sync.lock(stream.stdout()), metrics.new(), middleware.random_ids().unwrap(), cors_ok, middleware.token_table(tokens), root, wall_ns)
     let h = app.app(store.store(), parts)
-    let mut l = lit("server: listening on http://")
-    bytes.append(inout l, net.text(srv.addr()))
-    bytes.append(inout l, lit(" (web: "))
-    bytes.append(inout l, root)
-    bytes.append(inout l, lit(")"))
-    io.errln(l)
+    let addr = String.from_bytes(net.text(srv.addr())).unwrap_or(String.from(""))
+    lg.info("listening", log.fields().text("addr", addr).text("web", String.from_bytes(root.copy()).unwrap_or(String.from(""))))
 
-    // TERM and INT arrive on the signal pipe; a thread waits for one and cancels the server
-    // TODO(eider-lang#24): std's "cancel a token on SIGTERM/SIGINT" helper replaces this block
+    // SIGTERM or SIGINT cancels the root token; the server drains and returns
     let tok = task.root()
-    signal.watch(signal.TERM).unwrap()
-    signal.watch(signal.INT).unwrap()
-    let sig_fd = signal.events_fd().unwrap()
-    let t = tok
-    let waiter = spawn(|| -> i32 {
-        let mut going = true
-        while going {
-            match fd.wait_ready(sig_fd, fd.READY_READ, t.deadline()) {
-                Ok(true) => {
-                    if signal.pending().unwrap_or(List.new()).len() > 0 { going = false }
-                }
-                Ok(false) => { going = false }
-                Err(e) => { going = false }
-            }
-        }
-        t.cancel()
-        0
-    })
-    match srv.serve(h, tok) {
-        Ok(st) => {
-            let m = "server: stopped after {st.requests} requests on {st.connections} connections"
-            io.errln(m.bytes())
-        }
-        Err(e) => io.errln(e.bytes())
-    }
-    let z = waiter.join()
+    let watcher = service.cancel_on_term(tok)?
+    let st = srv.serve(h, tok)?
+    let signal = watcher.join()
+    lg.info("stopped", log.fields().uint("requests", st.requests as u64).uint("connections", st.connections as u64).int("signal", signal as i64))
+    Ok(())
 }

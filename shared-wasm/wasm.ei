@@ -2,62 +2,29 @@
 //
 //   cd shared-wasm && eider build --wasm wasm.ei -o ../web/src/wasm/shared   (scripts/build.sh)
 //
-// Two kinds of export, because in Eider 0.3 exports take and return only integers and
-// bool (docs/site/guide/wasm.md, "Rules"):
+// Two kinds of export:
 //
-// 1. Integer functions, called directly: `line_total_cents(1299, 2)`, `check_qty(...)`,
-//    and the shop's constants. A negative result from line_total_cents is minus an error
-//    code (shared.code).
-// 2. Buffer functions for what needs text or lists (`quote`, `check_customer`,
-//    `find_coupon`, `format_cents`): the module reads its request (shared_wasm.wire's
-//    line format) through two host functions the page passes to `load`,
-//    `host_input_len()` and `host_input_byte(i)`, and writes its answer, JSON text,
-//    with `print`, which the loader sends to the `eider_write` import. They return 0 for
-//    an `"ok":true` answer, else 1. web/src/shop.ts wraps all of this in typed functions.
+// 1. Integer functions, called directly: `line_total_cents(1299, 2)` and the shop's
+//    constants. A negative result from line_total_cents is minus an error code
+//    (shared.code).
+// 2. Text functions, `String -> String` (a JavaScript string each way; the generated loader
+//    copies them in and out of the module's memory): `quote`, `check_customer`,
+//    `find_coupon`, `check_qty` and `format_cents` take a request of `<key> <value>` lines
+//    and answer JSON (shared_wasm.wire has the format, the answers and the logic, and is
+//    tested natively). web/src/shop.ts wraps all of this in typed functions.
 //
-// This file is the only one with capabilities (`ffi` for the two host imports, `io` for
-// print). It is in a package of its own, shared_wasm, because a dependency's grant covers
-// every module a depender could import: inside `shared` it would make the server grant
-// `shared` `ffi, io`. The server depends on `shared` alone, which stays pure.
+// Records and lists can't cross the boundary yet, which is why the request is text and the
+// answer JSON.
 //
-// TODO(eider-lang#136): String, List and record parameters replace the host-input
-// protocol; `export(ts)` types replace the hand-written JSON (docs/design/typescript_models.md).
+// The module needs no capability: no host imports, no output channel. It stays a package
+// of its own so that the server, which depends on `shared` alone, doesn't build the wire
+// format.
 
 import shared
 import shared.money
 import shared.cart
-import shared.coupon
 import shared.validate
 import shared_wasm.wire
-
-// supplied by the page (web/src/shop.ts): the bytes of the current request
-// TODO(eider-lang#139): documented, typed host imports (today they need ffi and unsafe)
-extern "c" fn host_input_len() -> i32
-extern "c" fn host_input_byte(i: i32) -> i32
-
-fn input() -> List[u8] uses ffi {
-    let n = unsafe { host_input_len() }
-    let mut out: List[u8] = List.new()
-    for i in 0..n {
-        let b = unsafe { host_input_byte(i) }
-        if b < 0 || b > 255 { return out }
-        out.push(b as u8)
-    }
-    out
-}
-
-/// Writes `answer` (the output channel) and returns 0 if it is an ok answer, else 1.
-fn reply(answer: List[u8]) -> i32 uses io {
-    print(wire.to_string(answer))
-    if answer.len() > 6 && answer[6] == 116 { 0 } else { 1 }   // {"ok":t...
-}
-
-fn run(f: fn(wire.Request) -> List[u8]) -> i32 uses io, ffi {
-    match wire.parse(input()) {
-        Ok(r) => reply(f(r))
-        Err(e) => reply(wire.error(e))
-    }
-}
 
 // ---- integer functions
 
@@ -78,22 +45,6 @@ export fn line_total_cents(unit_cents: i64, qty: i64) -> i64 {
     }
 }
 
-/// 0 when `qty` of product `product_id` can be in a cart with `have` in stock, else the
-/// error code; the answer (with the message) is written too.
-export fn check_qty(product_id: i64, qty: i64, have: i64) -> i32 uses io {
-    let r = validate.qty(qty).and_then(|q: i64| -> Result[i64, shared.ShopError] { validate.stock(product_id, q, have) })
-    match r {
-        Ok(q) => {
-            let z = reply(wire.lit("{{\"ok\":true}}"))
-            0
-        }
-        Err(e) => {
-            let z = reply(wire.error(e))
-            shared.code(e)
-        }
-    }
-}
-
 export fn max_qty() -> i64 { validate.MAX_QTY }
 export fn max_lines() -> i64 { validate.MAX_LINES }
 export fn tax_bp() -> i64 { cart.TAX_BP }
@@ -101,24 +52,19 @@ export fn shipping_cents() -> i64 { cart.SHIPPING_CENTS }
 export fn free_shipping_from_cents() -> i64 { cart.FREE_SHIPPING_FROM }
 export fn max_cents() -> i64 { money.MAX_CENTS }
 
-// ---- buffer functions: request through host_input_*, JSON answer through print
+// ---- text functions: a request in, JSON out
 
 /// The quote for `line` and `coupon` entries: subtotal, discount, shipping, tax, total.
-export fn quote() -> i32 uses io, ffi { run(wire.quote) }
+export fn quote(request: String) -> String { wire.quote(request) }
 
 /// The cleaned name and email of `name` and `email` entries, or every field error.
-export fn check_customer() -> i32 uses io, ffi { run(wire.customer) }
+export fn check_customer(request: String) -> String { wire.customer(request) }
 
 /// The coupon of a `coupon` entry, with its description.
-export fn find_coupon() -> i32 uses io, ffi { run(wire.coupon_lookup) }
+export fn find_coupon(request: String) -> String { wire.find_coupon(request) }
 
-/// Writes `cents` as money text ("$1,234.05"); 1 if it is out of range.
-export fn format_cents(cents: i64) -> i32 uses io {
-    match money.of(cents) {
-        Ok(m) => {
-            print(money.format(m))
-            0
-        }
-        Err(e) => 1
-    }
-}
+/// Whether `qty` of `product` fits a cart with `stock` in stock: `{"ok":true}` or the error.
+export fn check_qty(request: String) -> String { wire.check_qty(request) }
+
+/// `cents` (decimal text) as money text ("$1,234.05"); "" if it is out of range.
+export fn format_cents(cents: String) -> String { wire.format_cents(cents) }

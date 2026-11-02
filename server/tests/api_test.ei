@@ -6,8 +6,6 @@ import server.store
 import server.api
 import server.assets
 
-// TODO(eider-lang#140): test blocks next to the code, without this empty main
-fn main() {}
 
 fn lit(s: str) -> List[u8] { String.from(s).bytes() }
 

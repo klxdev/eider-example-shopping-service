@@ -1,26 +1,24 @@
 //! shared_wasm.wire: the text protocol of the WebAssembly module (wasm.ei).
 //!
-//! In Eider 0.3 a WebAssembly export takes and returns only integers and bool, so a cart
-//! (a list) or a name (a string) can't be an argument. The module reads its request as
-//! bytes through two imported host functions instead, and writes its answer as JSON text
-//! through `print` (which the loader routes to the `eider_write` import). This file is
-//! the pure half: parsing the request and writing the answer, tested natively in
-//! tests/wire_test.ei. wasm.ei is the half with the host calls.
-//!
-//! A request is lines of `<key> <value>`:
+//! A WebAssembly export takes and returns a `String` (JavaScript `string`) but not yet a
+//! record or a list, so a cart or a customer travels as text. The request is lines of
+//! `<key> <value>`:
 //!
 //!     coupon SAVE10
 //!     line <product_id> <unit_cents> <qty>
 //!     name Ada Lovelace
 //!     email ada@example.com
+//!     product 1          (check_qty: the product, the wanted quantity, the stock)
+//!     qty 3
+//!     stock 5
 //!
-//! An answer is one JSON object: `{"ok":true,...}` or
+//! and the answer is one JSON object, written by eider-json's derived codecs from the
+//! types below: `{"ok":true,...}` or
 //! `{"ok":false,"errors":[{"code":2,"field":"qty","message":"..."}]}`.
 //!
-//! TODO(eider-lang#136): Strings, records and Lists across the export
-//! boundary (docs/design/typescript_models.md) replace this whole file.
+//! Every function here is pure and runs natively too: tests/wire_test.ei.
 
-import std.bytes
+import std.strings
 import json
 import shared
 import shared.money
@@ -29,51 +27,57 @@ import shared.coupon
 import shared.validate
 
 /// A parsed request.
-pub type Request = { lines: List[cart.Line], coupon: Option[String], name: String, email: String }
+pub type Request = {
+    lines: List[cart.Line]
+    coupon: Option[String]
+    name: String
+    email: String
+    product: i64
+    qty: i64
+    stock: i64
+}
 
-// core.sys's `lit` and `to_string` call into the native C core, which a WebAssembly module
-// doesn't have (its `ec_*` imports are left unresolved), so the package uses these.
-// TODO(eider-lang#137): drop them when core.sys works in --wasm builds
-/// The bytes of a literal.
-pub fn lit(s: str) -> List[u8] { String.from(s).bytes() }
+fn is(a: String, b: str) -> bool { a == String.from(b) }
 
-/// Bytes as text; invalid UTF-8 gives "" (only our own JSON goes through it).
-pub fn to_string(b: List[u8]) -> String { String.from_bytes(b).unwrap_or(String.from("")) }
+/// The JSON eider-json wrote, as text.
+// TODO(eider-json#2): `json.to_string`
+fn text(b: List[u8]) -> String { String.from_bytes(b).unwrap_or(String.from("")) }
 
 fn bad(what: str) -> shared.ShopError { shared.BadInput(String.from(what)) }
 
-fn int(b: List[u8]) -> Result[i64, shared.ShopError] {
-    let n = bytes.parse_u64(b).ok_or(bad("expected a number"))?
-    if n > 9223372036854775807 { return Err(bad("number too large")) }
-    Ok(n as i64)
-}
-
-fn text(b: List[u8]) -> Result[String, shared.ShopError] {
-    match String.from_bytes(b) {
-        Ok(s) => Ok(s)
-        Err(i) => Err(bad("text is not UTF-8"))
+fn int(s: String) -> Result[i64, shared.ShopError] {
+    match strings.parse_u64(s) {
+        Ok(n) => {
+            if n > 9223372036854775807 { return Err(bad("number too large")) }
+            Ok(n as i64)
+        }
+        Err(e) => Err(bad("expected a number"))
     }
 }
 
 /// Parses a request (see the module comment).
-pub fn parse(src: List[u8]) -> Result[Request, shared.ShopError] {
-    let mut req = Request(List.new(), None, String.from(""), String.from(""))
-    for l in bytes.lines(src) {
+pub fn parse(src: String) -> Result[Request, shared.ShopError] {
+    let mut req = Request(List.new(), None, String.from(""), String.from(""), 0, 0, 0)
+    for l in strings.lines(src) {
         if l.len() > 0 {
-            let sp = bytes.find_byte(l, 32, 0).unwrap_or(l.len())
-            let key = bytes.slice(l, 0, sp)
-            let rest: List[u8] = if sp < l.len() { bytes.slice(l, sp + 1, l.len()) } else { List.new() }
-            if bytes.eq(key, lit("line")) {
-                let f = bytes.split(rest, 32)
+            let (key, rest) = strings.split_once(l.copy(), " ").unwrap_or((l.copy(), String.from("")))
+            if is(key, "line") {
+                let f = strings.split(rest, " ")
                 if f.len() != 3 { return Err(bad("line takes <product_id> <unit_cents> <qty>")) }
-                let unit = money.of(int(f[1])?)?
-                req.lines.push(cart.Line(int(f[0])?, unit, int(f[2])?))
-            } else if bytes.eq(key, lit("coupon")) {
-                req.coupon = Some(text(rest)?)
-            } else if bytes.eq(key, lit("name")) {
-                req.name = text(rest)?
-            } else if bytes.eq(key, lit("email")) {
-                req.email = text(rest)?
+                let unit = money.of(int(f[1].copy())?)?
+                req.lines.push(cart.Line(int(f[0].copy())?, unit, int(f[2].copy())?))
+            } else if is(key, "coupon") {
+                req.coupon = Some(rest)
+            } else if is(key, "name") {
+                req.name = rest
+            } else if is(key, "email") {
+                req.email = rest
+            } else if is(key, "product") {
+                req.product = int(rest)?
+            } else if is(key, "qty") {
+                req.qty = int(rest)?
+            } else if is(key, "stock") {
+                req.stock = int(rest)?
             } else {
                 return Err(bad("unknown key"))
             }
@@ -82,80 +86,51 @@ pub fn parse(src: List[u8]) -> Result[Request, shared.ShopError] {
     Ok(req)
 }
 
-// ---- JSON answers, written by hand: eider-json's derived codecs (which the server uses)
-// call core.sys, which a --wasm module can't (TODO(eider-lang#137))
+// ---- answers: records whose derived JSON is the wire format
 
-fn key(inout out: List[u8], k: str) {
-    out.push(44)
-    json.quote_into(inout out, lit(k))
-    out.push(58)
-}
-
-fn key_int(inout out: List[u8], k: str, v: i64) {
-    key(inout out, k)
-    bytes.append(inout out, bytes.from_i64(v))
-}
-
-fn key_str(inout out: List[u8], k: str, v: String) {
-    key(inout out, k)
-    json.quote_into(inout out, v.bytes())
-}
-
-fn key_bool(inout out: List[u8], k: str, v: bool) {
-    key(inout out, k)
-    // TODO(eider-lang#48): `if` as a call argument
-    let t = if v { "true" } else { "false" }
-    bytes.append(inout out, lit(t))
-}
-
-fn ok_start() -> List[u8] { lit("{{\"ok\":true") }
-
-fn close(out: List[u8]) -> List[u8] {
-    let mut o = out.copy()
-    o.push(125)
-    o
-}
-
-/// One error as a JSON object.
-pub fn error_object(e: shared.ShopError) -> List[u8] {
-    let mut out = lit("{{\"code\":")
-    bytes.append(inout out, bytes.from_i64(shared.code(e) as i64))
-    key_str(inout out, "field", shared.field(e))
-    key_str(inout out, "message", shared.message(e))
-    close(out)
-}
+/// One error: `shared.code`, the field it is about, and the message people read.
+pub type ErrorInfo = { code: i32, field: String, message: String }
 
 /// `{"ok":false,"errors":[...]}`.
-pub fn errors(es: List[shared.ShopError]) -> List[u8] {
-    let mut out = lit("{{\"ok\":false,\"errors\":[")
-    for i in 0..es.len() {
-        if i > 0 { out.push(44) }
-        bytes.append(inout out, error_object(es[i]))
-    }
-    bytes.append(inout out, lit(r"]}"))
-    out
+pub type Failure = { ok: bool, errors: List[ErrorInfo] }
+
+/// `{"ok":true}`.
+pub type Done = { ok: bool }
+
+/// `{"ok":true,...}` with the members of `body`.
+pub type Reply[T] = { ok: bool, @json(flatten) body: T }
+
+/// `{"ok":true,"coupon":{...}}`.
+pub type Found = { coupon: coupon.Info }
+
+fn info(e: shared.ShopError) -> ErrorInfo { ErrorInfo(shared.code(e), shared.field(e), shared.message(e)) }
+
+/// The answer for these errors.
+pub fn errors(es: List[shared.ShopError]) -> String {
+    let mut infos: List[ErrorInfo] = List.new()
+    for e in es { infos.push(info(e)) }
+    text(json.to_json(Failure(false, infos)))
 }
 
-pub fn error(e: shared.ShopError) -> List[u8] {
+/// The answer for one error.
+pub fn error(e: shared.ShopError) -> String {
     let mut es: List[shared.ShopError] = List.new()
     es.push(e)
     errors(es)
 }
 
-/// A quote as `{"ok":true,"subtotal_cents":...,"coupon_applied":...}`.
-pub fn quote_json(q: cart.Quote) -> List[u8] {
-    let mut out = ok_start()
-    key_int(inout out, "subtotal_cents", q.subtotal.cents)
-    key_int(inout out, "discount_cents", q.discount.cents)
-    key_int(inout out, "shipping_cents", q.shipping.cents)
-    key_int(inout out, "tax_cents", q.tax.cents)
-    key_int(inout out, "total_cents", q.total.cents)
-    key_bool(inout out, "coupon_applied", q.coupon_applied)
-    close(out)
+fn ok[T](body: T) -> String { text(json.to_json(Reply(true, body))) }
+
+// ---- the exports' logic, over a request's text
+
+fn with(src: String, f: fn(Request) -> String) -> String {
+    match parse(src) {
+        Ok(r) => f(r)
+        Err(e) => error(e)
+    }
 }
 
-/// The answer to a quote request: every line's quantity is checked first.
-pub fn quote(req: Request) -> List[u8] {
+fn quote_of(req: Request) -> String {
     let mut es: List[shared.ShopError] = List.new()
     for l in req.lines {
         match validate.qty(l.qty) {
@@ -175,48 +150,59 @@ pub fn quote(req: Request) -> List[u8] {
         None => None
     }
     match cart.quote(req.lines, c) {
-        Ok(q) => quote_json(q)
+        Ok(q) => ok(q)
         Err(e) => error(e)
     }
 }
 
-/// The answer to a customer check: the cleaned name and email, or every field error.
-pub fn customer(req: Request) -> List[u8] {
+fn customer_of(req: Request) -> String {
     match validate.customer(req.name, req.email) {
-        Ok(c) => {
-            let mut out = ok_start()
-            key_str(inout out, "name", c.name)
-            key_str(inout out, "email", c.email)
-            close(out)
-        }
+        Ok(c) => ok(c)
         Err(es) => errors(es)
     }
 }
 
-/// One coupon as `{"id":1,"code":"SAVE10","description":"10% off","min_cents":0}`.
-pub fn coupon_object(c: coupon.Coupon) -> List[u8] {
-    let mut out = lit("{{\"id\":")
-    bytes.append(inout out, bytes.from_i64(c.id as i64))
-    key_str(inout out, "code", c.code.copy())
-    key_str(inout out, "description", coupon.describe(c))
-    key_int(inout out, "min_cents", c.min_cents)
-    close(out)
-}
-
-/// The answer to a coupon lookup.
-pub fn coupon_lookup(req: Request) -> List[u8] {
+fn coupon_of(req: Request) -> String {
     match req.coupon {
         Some(code) => {
             match coupon.find(code) {
-                Ok(c) => {
-                    let mut out = ok_start()
-                    key(inout out, "coupon")
-                    bytes.append(inout out, coupon_object(c))
-                    close(out)
-                }
+                Ok(c) => ok(Found(coupon.info(c)))
                 Err(e) => error(e)
             }
         }
         None => error(bad("no coupon given"))
+    }
+}
+
+fn qty_of(req: Request) -> String {
+    let r = validate.qty(req.qty).and_then(|q: i64| -> Result[i64, shared.ShopError] { validate.stock(req.product, q, req.stock) })
+    match r {
+        Ok(q) => text(json.to_json(Done(true)))
+        Err(e) => error(e)
+    }
+}
+
+/// The quote for `line` and `coupon` entries: subtotal, discount, shipping, tax, total.
+pub fn quote(src: String) -> String { with(src, quote_of) }
+
+/// The cleaned name and email of `name` and `email` entries, or every field error.
+pub fn customer(src: String) -> String { with(src, customer_of) }
+
+/// The coupon of a `coupon` entry, with its description.
+pub fn find_coupon(src: String) -> String { with(src, coupon_of) }
+
+/// Whether `qty` of `product` can be in a cart with `stock` in stock.
+pub fn check_qty(src: String) -> String { with(src, qty_of) }
+
+/// `cents` (decimal text) as money text ("$1,234.05"); "" if it is not an amount in range.
+pub fn format_cents(cents: String) -> String {
+    match int(cents) {
+        Ok(n) => {
+            match money.of(n) {
+                Ok(m) => money.format(m)
+                Err(e) => String.from("")
+            }
+        }
+        Err(e) => String.from("")
     }
 }

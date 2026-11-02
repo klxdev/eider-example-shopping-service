@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.0
+
+For Eider 0.4 (`eider = "0.4"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.4.0.
+
+- JSON: every one-line `impl json.Encode/Decode { json.encode_record(...) }` is gone; the
+  traits are `@derive` in eider-json 0.4, so `json.to_json` and `json.from_json` work on any
+  record or enum. `Money`'s number encoding stays as a deliberate override. Request bodies
+  (add a line, set a quantity, a coupon code, checkout) are read by derived decoding
+  (`AddIn`, `QtyIn`, `CodeIn`, `BuyerIn`) instead of member-by-member accessors; a malformed
+  body is a 400 naming the JSON path. `coupon.Info` is the one coupon view for the API and the
+  WebAssembly module.
+- WebAssembly: `quote`, `check_customer`, `find_coupon`, `check_qty` and `format_cents` are
+  `String -> String` exports. The `host_input_len`/`host_input_byte` protocol, the
+  `print`/`eider_write` capture, the hand-written instantiation in `shop.ts` and the
+  hand-written JSON writers and `lit`/`to_string` helpers in `wire.ei` are deleted; the answers
+  are `json.to_json` of derived types and `shop.ts` uses the generated loader. The module
+  needs no capability now. `wasm.ei` 124 -> 70 lines, `wire.ei` 222 -> 207 (with `check_qty`
+  and `format_cents` moved in), `shop.ts` 130 -> 93.
+- Server: settings come from `std/config` (`--port`, `--admin.token`, `--web.dir`,
+  `--cors.origin`, or `SHOP_*` variables; the old positional port and `PORT` are gone), the
+  startup and shutdown lines are `std/log` JSON, SIGTERM/SIGINT drain through
+  `std/service.cancel_on_term`, and `main` returns `Result[(), String]`. `main.ei` 152 -> 96
+  lines.
+- Records span lines without commas; test files have no empty `main`.
+- Removed the `TODO(eider-lang#136/#137/#138/#139/#140)` comments the new features resolve.
+  New gaps: eider-http#8 (access log through `std/log`) and eider-json#2 (`to_string`).
+
 ## 0.2.0
 
 For Eider 0.3 (`eider = "0.3"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.3.0.

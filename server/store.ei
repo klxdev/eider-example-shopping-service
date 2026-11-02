@@ -24,10 +24,13 @@ import shared.cart
 import shared.coupon
 import shared.validate
 
-pub type Product = { id: i64, sku: String, name: String, description: String, @json(name = "price_cents") price: money.Money, stock: i64 }
-
-impl json.Encode for Product {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+pub type Product = {
+    id: i64
+    sku: String
+    name: String
+    description: String
+    @json(name = "price_cents") price: money.Money
+    stock: i64
 }
 
 /// A cart as stored: items (product and quantity) and the coupon code, if any. Prices are
@@ -36,43 +39,33 @@ type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
 
 /// A cart line as shown: the item with its product's name, price and stock now.
 pub type ViewLine = {
-    product_id: i64,
-    name: String,
-    @json(name = "unit_cents") unit: money.Money,
-    qty: i64,
-    @json(name = "line_total_cents") line_total: money.Money,
-    stock: i64,
-}
-
-impl json.Encode for ViewLine {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+    product_id: i64
+    name: String
+    @json(name = "unit_cents") unit: money.Money
+    qty: i64
+    @json(name = "line_total_cents") line_total: money.Money
+    stock: i64
 }
 
 pub type CartView = { id: i64, lines: List[ViewLine], coupon: Option[String], quote: cart.Quote }
 
-impl json.Encode for CartView {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
-}
-
-pub type OrderLine = { product_id: i64, name: String, @json(name = "unit_cents") unit: money.Money, qty: i64, @json(name = "line_total_cents") line_total: money.Money }
-
-impl json.Encode for OrderLine {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+pub type OrderLine = {
+    product_id: i64
+    name: String
+    @json(name = "unit_cents") unit: money.Money
+    qty: i64
+    @json(name = "line_total_cents") line_total: money.Money
 }
 
 /// An order. In JSON the customer's name and email are the order's own members, and the
 /// API adds `created_at` as RFC 3339 text (server/api.ei, OrderBody).
 pub type Order = {
-    id: i64,
-    lines: List[OrderLine],
-    coupon: Option[String],
-    quote: cart.Quote,
-    @json(flatten) customer: validate.Customer,
-    @json(skip) created_ns: i64,
-}
-
-impl json.Encode for Order {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+    id: i64
+    lines: List[OrderLine]
+    coupon: Option[String]
+    quote: cart.Quote
+    @json(flatten) customer: validate.Customer
+    @json(skip) created_ns: i64
 }
 
 /// What the store can refuse: a shared rule, or a cart or order that doesn't exist.
@@ -88,18 +81,20 @@ impl From[shared.ShopError] for StoreError {
 }
 
 type Db = {
-    products: Map[i64, Product],
-    carts: Map[i64, CartRec],
-    orders: Map[i64, Order],
-    next_cart: i64,
-    next_order: i64,
+    products: Map[i64, Product]
+    carts: Map[i64, CartRec]
+    orders: Map[i64, Order]
+    next_cart: i64
+    next_order: i64
 }
 
 /// Counters for the admin API.
-pub type Stats = { products: i64, units_in_stock: i64, open_carts: i64, orders: i64, @json(name = "revenue_cents") revenue: money.Money }
-
-impl json.Encode for Stats {
-    fn encode(self, inout w: json.Writer) { json.encode_record(self, inout w) }
+pub type Stats = {
+    products: i64
+    units_in_stock: i64
+    open_carts: i64
+    orders: i64
+    @json(name = "revenue_cents") revenue: money.Money
 }
 
 /// The shop's state; copies share it.
