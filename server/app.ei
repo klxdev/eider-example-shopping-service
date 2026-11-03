@@ -2,15 +2,16 @@
 //! (api.ei), the JSON-RPC admin API (admin.ei), /health, /metrics and the web front end's
 //! files (assets.ei), inside eider-http's middleware.
 //!
-//! Outermost first: request id, access log (one JSON line per request), metrics,
+//! Outermost first: request id, trace (a span per request, `traceparent` in and out), access
+//! log (one `std/log` line per request, like the service's own), metrics (per route),
 //! problem+json for the http package's own errors (the router's 404 and 405), CORS for the
 //! dev front end's origin, then the router.
 
-import std.stream
-import std.sync
+import std.log
 import http
 import http.middleware
 import http.metrics
+import http.trace
 import rpc.jsonrpc
 import openapi
 import server.store
@@ -18,11 +19,12 @@ import server.api
 import server.admin
 import server.assets
 
-/// What the application is made of besides the store. `log` takes the access log, `cors`
-/// says which origins may call the API from a browser (the Vite dev server), `admin`
-/// checks the bearer token of /rpc and gives the principal.
-pub type Parts[W] = {
-    log: sync.Lock[W]
+/// What the application is made of besides the store. `log` takes the access log, `tracer`
+/// the spans, `cors` says which origins may call the API from a browser (the Vite dev
+/// server), `admin` checks the bearer token of /rpc and gives the principal.
+pub type Parts = {
+    log: log.Logger
+    tracer: trace.Tracer
     metrics: metrics.Metrics
     ids: middleware.Ids
     cors: middleware.Cors
@@ -40,9 +42,9 @@ pub fn routes(s: store.Store, p_admin: fn(List[u8]) -> Option[List[u8]], p_metri
     svc
 }
 
-/// The application. (TODO(eider-http#8): the access log through a `std/log` Logger, like main's lines)
-pub fn app[W: stream.Writer + Copy](s: store.Store, p: Parts[W]) -> http.Handler uses io, clock, fs {
+/// The application.
+pub fn app(s: store.Store, p: Parts) -> http.Handler uses io, clock, fs {
     let svc = routes(s, p.admin, p.metrics, p.web_root, p.now_ns)
     let inner = middleware.cors(p.cors, svc.handler())
-    middleware.request_id(p.ids, middleware.access_log(p.log, p.metrics.wrap(middleware.problems(inner))))
+    middleware.request_id(p.ids, trace.wrap(p.tracer, middleware.access_log_with(p.log, p.metrics.wrap(middleware.problems(inner)))))
 }

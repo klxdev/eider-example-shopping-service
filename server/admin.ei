@@ -10,20 +10,13 @@
 
 import json
 import rpc.jsonrpc
+import rpc.service
 import shared
 import server.store
-import server.api
 
-type Change = { product: i64, amount: i64 }
+type Restock = { product_id: i64, qty: i64 }
 
-fn change_args(p: jsonrpc.Params, second: str) -> Result[Change, jsonrpc.Error] {
-    p.at_most(2)?
-    Ok(Change(p.int(0, "product_id")?, p.int(1, second)?))
-}
-
-fn restock_args(p: jsonrpc.Params) -> Result[Change, jsonrpc.Error] { change_args(p, "qty") }
-
-fn price_args(p: jsonrpc.Params) -> Result[Change, jsonrpc.Error] { change_args(p, "cents") }
+type SetPrice = { product_id: i64, cents: i64 }
 
 fn refused(e: store.StoreError) -> jsonrpc.Error {
     // TODO(eider-lang#143): the annotation; `_ => 0` alone is an i32
@@ -37,21 +30,28 @@ fn refused(e: store.StoreError) -> jsonrpc.Error {
 /// The `data` of a refused change: the shared rule's code.
 type RuleCode = { code: i64 }
 
-fn lift(r: Result[store.Product, store.StoreError]) -> Result[store.Product, jsonrpc.Error] {
+fn lift[T](r: Result[T, store.StoreError]) -> Result[T, jsonrpc.Error] {
     match r {
-        Ok(p) => Ok(p)
+        Ok(v) => Ok(v)
         Err(e) => Err(refused(e))
+    }
+}
+
+/// The admin methods, over a store.
+type Admin = { s: store.Store }
+
+impl service.Service for Admin {
+    fn register(self, inout r: service.Registry) {
+        let s = self.s
+        r.add_none("stats", || -> Result[store.Stats, jsonrpc.Error] { Ok(s.stats()) })
+        r.add_json("restock", |a: Restock| -> Result[store.Product, jsonrpc.Error] { lift(s.restock(a.product_id, a.qty)) })
+        r.add_json("set_price", |a: SetPrice| -> Result[store.Product, jsonrpc.Error] { lift(s.set_price(a.product_id, a.cents)) })
     }
 }
 
 /// The admin methods over `s`.
 pub fn table(s: store.Store) -> jsonrpc.Table {
     let mut t = jsonrpc.table()
-    t.add("admin.stats", |p: jsonrpc.Params| -> Result[List[u8], jsonrpc.Error] {
-        p.none()?
-        Ok(json.to_json(s.stats()))
-    })
-    t.add_typed("admin.restock", restock_args, api.product_json, |c: Change| -> Result[store.Product, jsonrpc.Error] { lift(s.restock(c.product, c.amount)) })
-    t.add_typed("admin.set_price", price_args, api.product_json, |c: Change| -> Result[store.Product, jsonrpc.Error] { lift(s.set_price(c.product, c.amount)) })
+    service.mount(inout t, "admin", Admin(s))
     t
 }

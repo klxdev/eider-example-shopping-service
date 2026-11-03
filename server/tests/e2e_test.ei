@@ -9,13 +9,13 @@
 // validation from the OpenAPI operations (400), the shared rules (409, 422), problem+json
 // 404s, CORS for the dev origin, the JSON-RPC admin API and its token, four shoppers racing
 // for the last two pins (exactly two orders), /metrics, /openapi.json, the static front end
-// and its path checks, graceful shutdown and the access log.
+// and its path checks, graceful shutdown and the trace spans.
 
 import std.bytes
 import std.fs
 import std.io
 import std.net
-import std.stream
+import std.log
 import std.sync
 import std.task
 import std.time
@@ -25,6 +25,7 @@ import http.server
 import http.client
 import http.middleware
 import http.metrics
+import http.trace
 import server.store
 import server.app
 
@@ -112,10 +113,14 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     let addr = srv.addr()
     check(inout ck, addr.port > 0, "an ephemeral port")
 
-    let log = sync.lock(stream.buffer())
+    // the access log goes to stderr like the service's own lines (minimum level Error: silent
+    // here); the spans are collected, one per request
+    let empty: List[trace.Span] = List.new()
+    let spans = sync.lock(empty)
+    let lg = log.new(log.Error)
     let mut tokens: List[(List[u8], List[u8])] = List.new()
     tokens.push((lit(TOKEN), lit("admin")))
-    let parts = app.Parts(log, metrics.new(), middleware.ids("req"), middleware.cors_config().allow_origin("http://localhost:5173"), middleware.token_table(tokens), web, fixed_now)
+    let parts = app.Parts(lg, trace.tracer(trace.collect(spans)), metrics.by_route(metrics.new()), middleware.ids("req"), middleware.cors_config().allow_origin("http://localhost:5173"), middleware.token_table(tokens), web, fixed_now)
     let h = app.app(store.store(), parts)
     let tok = task.root()
     let t = tok
@@ -191,7 +196,7 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     let ord = c.request(buy, dl).unwrap()
     check(inout ck, ord.status == 201, "checkout is 201")
     check(inout ck, int_at(ord.body, two("quote", "total_cents")) == 2870, "the order costs what the cart showed")
-    check(inout ck, has(ord.body, "\"name\":\"Ada Lovelace\"") && has(ord.body, "\"email\":\"ada@example.com\"") && has(ord.body, "\"created_at\":\"2025-11-01T00:00:00.000Z\""), "the order keeps the cleaned customer")
+    check(inout ck, has(ord.body, "\"name\":\"Ada Lovelace\"") && has(ord.body, "\"email\":\"ada@example.com\"") && has(ord.body, "\"created_at\":\"2025-11-01T00:00:00Z\""), "the order keeps the cleaned customer")
     let gone = http.request("GET", base.copy())
     check(inout ck, c.request(gone, dl).unwrap().status == 404, "the cart is gone after checkout")
     check(inout ck, int_at(call(inout c, "GET", "/api/products/1", "", dl).body, one("stock")) == 23, "checkout took the stock")
@@ -267,17 +272,16 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     let doc = call(inout c, "GET", "/openapi.json", "", dl)
     check(inout ck, doc.status == 200 && has(doc.body, "\"operationId\":\"checkout\"") && has(doc.body, "\"maximum\":10"), "the description has checkout and the shared MAX_QTY")
     let m = call(inout c, "GET", "/metrics", "", dl)
-    check(inout ck, has(m.body, "http_requests_total"), "prometheus metrics")
+    check(inout ck, has(m.body, "http_requests_total") && has(m.body, "route=\"getProduct\""), "prometheus metrics, labelled by operation")
     c.close()
 
     // ---- graceful shutdown and the access log
     tok.cancel()
     let stats = running.join()
     check(inout ck, client.get(addr, "/health", dl).is_err(), "stopped")
-    let log_lines = bytes.lines(log.get().bytes())
-    check(inout ck, log_lines.len() as i64 == stats.requests, "one access-log line per request")
-    let first = json.parse(log_lines[0]).unwrap()
-    check(inout ck, json.field(first, first.root, "id").is_some() && json.field(first, first.root, "status").is_some(), "the access log is JSON with ids")
+    let seen = spans.get()
+    check(inout ck, seen.len() as i64 == stats.requests, "one trace span per request")
+    check(inout ck, seen[0].trace_id.len() == 32 && seen[0].status > 0, "the spans carry a trace id and the status")
 
     let summary = "{ck.run} checks, {ck.failed} failed"
     io.outln(summary.bytes())

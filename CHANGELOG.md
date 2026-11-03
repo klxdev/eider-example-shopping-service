@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.0
+
+For Eider 0.5 (`eider = "0.5"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.5.0.
+
+- OpenAPI (`server/api.ei`, 355 -> 273 lines): the hand-written decoders, encoders and
+  `openapi.typed(...)` triples are gone; routes use `json_out`, `json_body_with` over the
+  request records (`AddIn`, `QtyIn`, `CodeIn`, `BuyerIn`) and the derived codecs. Schemas are
+  `T.json_schema()` with the bounds a type can't state added by hand (`Money`'s range, quantity,
+  length and email bounds); the `Quote`, `CartLine`, `OrderLine`, ... components stay, built from
+  the derived ones. `lift_body`, `text`, `lit`, the `*_json` encoders, `LineArgs`, `Buyer` and the
+  decode functions are deleted. A nullable member that is absent is no longer `required`
+  (`coupon`), and `created_at` is `2025-11-01T00:00:00Z` (no milliseconds) from `std/time`.
+- Admin API (`server/admin.ei`): `rpc/service` registers `stats`, `restock`, `set_price` over
+  records (`Restock`, `SetPrice`), mounted as `admin.*`; the positional-parameter decoders are gone.
+- Middleware (`server/app.ei`, `main.ei`): the access log goes through the service's `std/log`
+  Logger (`access_log_with`), one trace span per request (`trace.wrap`, logged by `log_sink`) and
+  per-route metrics (`metrics.by_route`, labelled by operation id). `Parts` is no longer generic
+  over a writer.
+- `json.to_string` replaces the `String.from_bytes(...).unwrap_or` shim in `shared-wasm/wire.ei`;
+  `sys.to_string` replaces it in `main.ei` and `assets.ei`.
+- Tests: the API is tested in process with `http/testing`, every response checked against its
+  operation with `openapi.check_response`; the e2e test collects the trace spans and checks the
+  per-route metrics label (50 checks); the access record's shape is checked with `access_line`.
+- Not adopted: `std/cli` for the server's flags (it has no environment layer, and `SHOP_*` is
+  how the dev script and the browser test configure the server, so `std/config` stays); a
+  static-file handler (eider-http#7 is open); `svc.planner()` for body limits before the body
+  is read.
+- `eider lint` is clean on `main.ei` and the e2e test; library modules can't be linted yet
+  (eider-lang#163). New gap: eider-lang#162.
+
 ## 0.3.0
 
 For Eider 0.4 (`eider = "0.4"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.4.0.

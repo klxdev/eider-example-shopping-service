@@ -2,7 +2,7 @@
 # library repositories.
 #
 # - `eider` from ~/.eider/bin (eider-lang's install.sh); the toolchain is the one
-#   eider.toml's `eider = "0.4"` asks for (`eider toolchain show`).
+#   eider.toml's `eider = "0.5"` asks for (`eider toolchain show`).
 # - The private repositories: eider downloads toolchains, and eider-pkg fetches the git
 #   dependencies, with a token of their own finding (GH_TOKEN, else GITHUB_TOKEN, else
 #   `gh auth token`; eider-lang#142), so nothing is set up here.

@@ -1,6 +1,13 @@
 // api and assets: problem+json from store errors, encoders, and the static path checks.
 import std.bytes
+import std.log
+import std.strings
 import std.testing
+import json
+import http
+import http.middleware
+import http.testing as http_testing
+import openapi
 import shared
 import server.store
 import server.api
@@ -10,6 +17,20 @@ import server.assets
 fn lit(s: str) -> List[u8] { String.from(s).bytes() }
 
 fn text(b: List[u8]) -> String { String.from_bytes(b).unwrap() }
+
+fn fixed_now() -> i64 { 1761955200000000000 }   // 2025-11-01T00:00:00Z
+
+/// The API over a fresh store, called in process (no socket, thread or port).
+fn client() -> http_testing.Client { http_testing.client(api.service(store.store(), fixed_now).handler()) }
+
+/// Every error of `resp` as an answer to `method` `path` (the OpenAPI template).
+fn mismatches(method: str, path: str, resp: http.Response) -> List[String] {
+    let mut out: List[String] = List.new()
+    for e in openapi.check_response(api.service(store.store(), fixed_now), method, path, resp) {
+        out.push(text(e.detail))
+    }
+    out
+}
 
 test "store errors become problem+json with the shared status and message" {
     let p = api.to_problem(store.Rule(shared.OutOfStock(6, 3, 2)))
@@ -28,7 +49,53 @@ test "store errors become problem+json with the shared status and message" {
 test "encoders" {
     let st = store.store()
     let c = st.add_line(st.new_cart().id, 3, 2).unwrap()
-    testing.assert_eq(text(api.cart_json(c)), String.from("{{\"id\":1,\"lines\":[{{\"product_id\":3,\"name\":\"Sticker pack\",\"unit_cents\":450,\"qty\":2,\"line_total_cents\":900,\"stock\":100}}],\"coupon\":null,\"quote\":{{\"subtotal_cents\":900,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":74,\"total_cents\":1573,\"coupon_applied\":false}}}}"))
+    testing.assert_eq(json.to_string(c), String.from("{{\"id\":1,\"lines\":[{{\"product_id\":3,\"name\":\"Sticker pack\",\"unit_cents\":450,\"qty\":2,\"line_total_cents\":900,\"stock\":100}}],\"coupon\":null,\"quote\":{{\"subtotal_cents\":900,\"discount_cents\":0,\"shipping_cents\":599,\"tax_cents\":74,\"total_cents\":1573,\"coupon_applied\":false}}}}"))
+}
+
+test "every response matches its operation's description" {
+    let c = client()
+    let none: List[String] = List.new()
+    testing.assert_eq(mismatches("GET", "/api/products", c.get("/api/products")), none)
+    testing.assert_eq(mismatches("GET", r"/api/products/{id}", c.get("/api/products/3")), none)
+    testing.assert_eq(mismatches("GET", r"/api/products/{id}", c.get("/api/products/99")), none)
+    testing.assert_eq(mismatches("GET", "/api/coupons", c.get("/api/coupons")), none)
+    let made = c.post("/api/carts", "", List.new())
+    assert made.status == 201
+    testing.assert_eq(mismatches("POST", "/api/carts", made), none)
+    let added = c.post_json("/api/carts/1/lines", "{{\"product_id\": 1, \"qty\": 2}}")
+    assert added.status == 200
+    testing.assert_eq(mismatches("POST", r"/api/carts/{id}/lines", added), none)
+    let coupon = c.put("/api/carts/1/coupon", "application/json", "{{\"code\": \"save10\"}}".bytes())
+    testing.assert_eq(mismatches("PUT", r"/api/carts/{id}/coupon", coupon), none)
+    testing.assert_eq(mismatches("GET", r"/api/carts/{id}", c.get("/api/carts/1")), none)
+    let bought = c.post_json("/api/carts/1/checkout", "{{\"name\": \"Ada\", \"email\": \"ada@example.com\"}}")
+    assert bought.status == 201
+    testing.assert_eq(mismatches("POST", r"/api/carts/{id}/checkout", bought), none)
+    testing.assert_eq(mismatches("GET", "/api/orders", c.get("/api/orders")), none)
+    testing.assert_eq(mismatches("GET", r"/api/orders/{id}", c.get("/api/orders/1")), none)
+}
+
+test "check_response finds a body that is not the operation's" {
+    let c = client()
+    assert mismatches("GET", "/api/products", c.get("/api/coupons")).len() > 0
+    assert mismatches("GET", "/api/orders", c.get("/api/products")).len() > 0
+}
+
+test "bodies are checked against the description" {
+    let c = client()
+    let made = c.post("/api/carts", "", List.new())
+    let r = c.post_json("/api/carts/1/lines", "{{\"product_id\": 1, \"qty\": 0, \"colour\": \"red\"}}")
+    assert r.status == 400
+    let body = http_testing.text(r)
+    assert strings.contains(body, "#/qty") && strings.contains(body, "#/colour")
+    assert c.post("/api/carts/1/lines", "text/plain", "x".bytes()).status == 415
+}
+
+test "the access record is a std/log line" {
+    let req = http.request("GET", "/api/products".bytes())
+    let lg = log.new(log.Info).with(log.fields().text("service", String.from("shop")))
+    let line = text(middleware.access_line(lg, 1761955200000, req, http.response(200), 1500000))
+    assert strings.contains(line, "\"msg\":\"request\"") && strings.contains(line, "\"service\":\"shop\"")
 }
 
 test "safe paths" {

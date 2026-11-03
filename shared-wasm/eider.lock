@@ -3,9 +3,9 @@ version = 1
 
 [[package]]
 name = "json"
-version = "0.4.0"
-source = "git+https://github.com/klxdev/eider-json.git#1c94f600b830b24d655ceabd8e78b535778e5251"
-hash = "sha256-ac4550089fec4efa6a519cfb4ec654f2d6b5ae63828687555387b195cd2e9285"
+version = "0.5.0"
+source = "git+https://github.com/klxdev/eider-json.git#b891b6ad08be207c3a09a2465c326e86aa089047"
+hash = "sha256-35f3c583cac6e8a9ad0b73fa0caaa21cb60f89a2f0b95d864d82d09a226d6d2d"
 deps = []
 grants = []
 

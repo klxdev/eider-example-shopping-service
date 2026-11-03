@@ -15,11 +15,12 @@
 //   --cors.origin      SHOP_CORS_ORIGIN   an origin allowed to call the API from a browser (default
 //                                         http://localhost:5173, the Vite dev server)
 //
-// One JSON access-log line per request goes to stdout (eider-http); startup and shutdown are
-// JSON lines on stderr (std/log). SIGTERM or SIGINT shuts it down gracefully (std/service):
+// One JSON access-log line per request and one for its trace span (eider-http) go through
+// the service's std/log logger, like the startup and shutdown lines, on stderr. SIGTERM or SIGINT shuts it down gracefully (std/service):
 // requests in flight finish, then it logs what it served. Plain HTTP only: put it behind a
 // TLS-terminating proxy to expose it.
 
+import core.sys
 import std.config
 import std.encoding
 import std.fs
@@ -28,14 +29,13 @@ import std.log
 import std.net
 import std.random
 import std.service
-import std.stream
-import std.sync
 import std.task
 import std.time
 import std.env
 import http.server
 import http.middleware
 import http.metrics
+import http.trace
 import server.store
 import server.app
 
@@ -81,10 +81,10 @@ fn main() -> Result[(), String] uses io, fs, net, clock, threads {
     let mut cors_ok = cors.copy()
     cors_ok.origins.push(cfg.cors_origin.bytes())
     let root = web_root(cfg.web_dir.copy())
-    let parts = app.Parts(sync.lock(stream.stdout()), metrics.new(), middleware.random_ids().unwrap(), cors_ok, middleware.token_table(tokens), root, wall_ns)
+    let parts = app.Parts(lg, trace.tracer(trace.log_sink(lg)), metrics.by_route(metrics.new()), middleware.random_ids().unwrap(), cors_ok, middleware.token_table(tokens), root, wall_ns)
     let h = app.app(store.store(), parts)
-    let addr = String.from_bytes(net.text(srv.addr())).unwrap_or(String.from(""))
-    lg.info("listening", log.fields().text("addr", addr).text("web", String.from_bytes(root.copy()).unwrap_or(String.from(""))))
+    let addr = sys.to_string(net.text(srv.addr()))
+    lg.info("listening", log.fields().text("addr", addr).text("web", sys.to_string(root.copy())))
 
     // SIGTERM or SIGINT cancels the root token; the server drains and returns
     let tok = task.root()

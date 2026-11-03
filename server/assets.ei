@@ -11,6 +11,7 @@
 //! eider-http has no static-file handler yet (filed as klxdev/eider-http#7); this
 //! is the small one an app needs, and the only code in the server that uses `fs`.
 
+import core.sys
 import std.bytes
 import std.fs
 import http
@@ -24,7 +25,7 @@ pub fn media_type(name: List[u8]) -> str {
         Some(i) => i
         None => { return "application/octet-stream" }
     }
-    let ext = String.from_bytes(bytes.slice(name, dot + 1, name.len())).unwrap_or(String.from(""))
+    let ext = sys.to_string(bytes.slice(name, dot + 1, name.len()))
     match ext {
         "html" => "text/html; charset=utf-8"
         "js" | "mjs" => "text/javascript; charset=utf-8"

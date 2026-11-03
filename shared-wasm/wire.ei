@@ -39,10 +39,6 @@ pub type Request = {
 
 fn is(a: String, b: str) -> bool { a == String.from(b) }
 
-/// The JSON eider-json wrote, as text.
-// TODO(eider-json#2): `json.to_string`
-fn text(b: List[u8]) -> String { String.from_bytes(b).unwrap_or(String.from("")) }
-
 fn bad(what: str) -> shared.ShopError { shared.BadInput(String.from(what)) }
 
 fn int(s: String) -> Result[i64, shared.ShopError] {
@@ -109,7 +105,7 @@ fn info(e: shared.ShopError) -> ErrorInfo { ErrorInfo(shared.code(e), shared.fie
 pub fn errors(es: List[shared.ShopError]) -> String {
     let mut infos: List[ErrorInfo] = List.new()
     for e in es { infos.push(info(e)) }
-    text(json.to_json(Failure(false, infos)))
+    json.to_string(Failure(false, infos))
 }
 
 /// The answer for one error.
@@ -119,7 +115,7 @@ pub fn error(e: shared.ShopError) -> String {
     errors(es)
 }
 
-fn ok[T](body: T) -> String { text(json.to_json(Reply(true, body))) }
+fn ok[T](body: T) -> String { json.to_string(Reply(true, body)) }
 
 // ---- the exports' logic, over a request's text
 
@@ -177,7 +173,7 @@ fn coupon_of(req: Request) -> String {
 fn qty_of(req: Request) -> String {
     let r = validate.qty(req.qty).and_then(|q: i64| -> Result[i64, shared.ShopError] { validate.stock(req.product, q, req.stock) })
     match r {
-        Ok(q) => text(json.to_json(Done(true)))
+        Ok(q) => json.to_string(Done(true))
         Err(e) => error(e)
     }
 }
