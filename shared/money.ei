@@ -9,7 +9,7 @@
 //! amount crosses JSON and the WebAssembly boundary without rounding.
 
 import std.bytes
-import json
+import std.serial
 
 /// The largest amount: 2^53 - 1 cents (about 90 trillion dollars).
 pub const MAX_CENTS: i64 = 9007199254740991
@@ -18,8 +18,18 @@ pub const MAX_CENTS: i64 = 9007199254740991
 pub type Money = { cents: i64 }
 
 // In JSON an amount is its number of cents (a member named `..._cents`), not an object.
-impl json.Encode for Money {
-    fn encode(self, inout w: json.Writer) { w.int(self.cents) }
+impl serial.Serialize for Money {
+    fn serialize[S: serial.Serializer](self, inout s: S) -> Result[(), serial.Error] { s.int(self.cents) }
+}
+
+impl serial.Deserialize for Money {
+    fn deserialize[D: serial.Deserializer](d: D) -> Result[Money, serial.Error] {
+        let c = d.read_i64()?
+        match of(c) {
+            Ok(m) => Ok(m)
+            Err(_) => Err(serial.fail(d, "an amount is 0 to MAX_CENTS cents"))
+        }
+    }
 }
 
 /// Why an amount couldn't be computed.

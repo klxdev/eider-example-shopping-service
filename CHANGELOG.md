@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+For Eider 0.6.
+
+- Serialization is opt-in: the records that reach JSON say `@[derive(Serialize)]` or
+  `@[derive(Serialize, Deserialize)]`, `Money` implements `serial.Serialize`/`Deserialize`, and
+  the attributes are `@[serial(...)]`/`@[json(flatten)]`. `json.to_json`/`from_json` became
+  `json.to_bytes`/`to_string`/`from_bytes`. The schemas of the shared records are
+  `impl derive.Schematic for ...` in `server/api.ei`.
+
 ## 0.5.0
 
 For Eider 0.5 (`eider = "0.5"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.5.0.

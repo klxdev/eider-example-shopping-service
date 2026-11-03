@@ -12,24 +12,24 @@ grants = ["clock", "fs", "io", "net", "threads"]
 [[package]]
 name = "json"
 version = "0.5.0"
-source = "git+https://github.com/klxdev/eider-json.git#b891b6ad08be207c3a09a2465c326e86aa089047"
-hash = "sha256-35f3c583cac6e8a9ad0b73fa0caaa21cb60f89a2f0b95d864d82d09a226d6d2d"
+source = "git+https://github.com/klxdev/eider-json.git#f5268dbea5087c6bc81574c36243b07331ecb42f"
+hash = "sha256-1ca0a1e86afe36cf06c762ca89c5a8db792e2f236ce4f2034bc4b786068ccdb8"
 deps = []
 grants = []
 
 [[package]]
 name = "openapi"
 version = "0.5.0"
-source = "git+https://github.com/klxdev/eider-openapi.git#ebdbd32b2ebc846786e7e7e2cadff0e6947a8cbc"
-hash = "sha256-10522305ef3554239bd6b0f3aa775470d3e3363008a58e9ac6a7b29a0e528978"
+source = "git+https://github.com/klxdev/eider-openapi.git#8dffa9ea635db15b685af459b94576643c699cba"
+hash = "sha256-eedbc1a66dd7220e308246c5b93738db8c20c6d88825ddcd4c8dab74a963e48f"
 deps = ["http", "json"]
 grants = []
 
 [[package]]
 name = "rpc"
 version = "0.5.0"
-source = "git+https://github.com/klxdev/eider-rpc.git#f3d928612dca70cb7db6a3744cdf873a0613e4a5"
-hash = "sha256-2676977c2ae71394a40ccf923f537a354a1602baee06c2da3a0a9560d5a807e9"
+source = "git+https://github.com/klxdev/eider-rpc.git#a9062de89dd2c2ed6ed365ad0e77c6596b2e3dcd"
+hash = "sha256-0a239897ce1efb8049f9cfd298578b93f87d64d5a1c9768f03ecbaae3b92f068"
 deps = ["http", "json"]
 grants = ["net", "io", "clock"]
 

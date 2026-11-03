@@ -21,6 +21,7 @@
 //! (validate.MAX_QTY, money.MAX_CENTS, ...), so the description states the same rules the
 //! code enforces. Errors are RFC 9457 problem+json throughout.
 
+import std.serial
 import std.time
 import json
 import http
@@ -80,16 +81,32 @@ impl derive.Schematic for money.Money {
     fn sample() -> money.Money { money.zero() }
 }
 
+/// The schemas of the records the API shows, from their fields (`@[derive(Schematic)]` would
+/// need the shared package to depend on eider-openapi, so they are implemented here).
+impl derive.Schematic for cart.Quote {}
+impl derive.Schematic for coupon.Info {}
+impl derive.Schematic for validate.Customer {}
+impl derive.Schematic for store.Product {}
+impl derive.Schematic for store.ViewLine {}
+impl derive.Schematic for store.CartView {}
+impl derive.Schematic for store.OrderLine {}
+impl derive.Schematic for store.Order {}
+
 /// Request bodies, as the API's JSON members.
+@[derive(Serialize, Deserialize, Schematic)]
 type AddIn = { product_id: i64, qty: i64 }
 
+@[derive(Serialize, Deserialize, Schematic)]
 type QtyIn = { qty: i64 }
 
+@[derive(Serialize, Deserialize, Schematic)]
 type CodeIn = { code: String }
 
+@[derive(Serialize, Deserialize, Schematic)]
 type BuyerIn = { name: String, email: String }
 
 /// An order as the API shows it: the order's members and when it was placed (RFC 3339).
+@[derive(Serialize, Schematic)]
 type OrderBody = { @[json(flatten)] order: store.Order, created_at: String }
 
 fn order_body(o: store.Order) -> OrderBody {

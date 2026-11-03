@@ -12,12 +12,13 @@
 //!     qty 3
 //!     stock 5
 //!
-//! and the answer is one JSON object, written by eider-json's derived codecs from the
+//! and the answer is one JSON object, written by eider-json's derived serializers from the
 //! types below: `{"ok":true,...}` or
 //! `{"ok":false,"errors":[{"code":2,"field":"qty","message":"..."}]}`.
 //!
 //! Every function here is pure and runs natively too: tests/wire_test.ei.
 
+import std.serial
 import std.strings
 import json
 import shared
@@ -85,27 +86,35 @@ pub fn parse(src: String) -> Result[Request, shared.ShopError] {
 // ---- answers: records whose derived JSON is the wire format
 
 /// One error: `shared.code`, the field it is about, and the message people read.
+@[derive(Serialize)]
 pub type ErrorInfo = { code: i32, field: String, message: String }
 
 /// `{"ok":false,"errors":[...]}`.
+@[derive(Serialize)]
 pub type Failure = { ok: bool, errors: List[ErrorInfo] }
 
 /// `{"ok":true}`.
+@[derive(Serialize)]
 pub type Done = { ok: bool }
 
 /// `{"ok":true,...}` with the members of `body`.
+@[derive(Serialize)]
 pub type Reply[T] = { ok: bool, @[json(flatten)] body: T }
 
 /// `{"ok":true,"coupon":{...}}`.
+@[derive(Serialize)]
 pub type Found = { coupon: coupon.Info }
 
 fn info(e: shared.ShopError) -> ErrorInfo { ErrorInfo(shared.code(e), shared.field(e), shared.message(e)) }
+
+/// The text of a serialized answer (these records always serialize).
+fn text(r: Result[String, serial.Error]) -> String { r.unwrap_or(String.from("{{\"ok\":false}}")) }
 
 /// The answer for these errors.
 pub fn errors(es: List[shared.ShopError]) -> String {
     let mut infos: List[ErrorInfo] = List.new()
     for e in es { infos.push(info(e)) }
-    json.to_string(Failure(false, infos))
+    text(json.to_string(Failure(false, infos)))
 }
 
 /// The answer for one error.
@@ -115,7 +124,7 @@ pub fn error(e: shared.ShopError) -> String {
     errors(es)
 }
 
-fn ok[T](body: T) -> String { json.to_string(Reply(true, body)) }
+fn ok[T](body: T) -> String { text(json.to_string(Reply(true, body))) }
 
 // ---- the exports' logic, over a request's text
 
@@ -173,7 +182,7 @@ fn coupon_of(req: Request) -> String {
 fn qty_of(req: Request) -> String {
     let r = validate.qty(req.qty).and_then(|q: i64| -> Result[i64, shared.ShopError] { validate.stock(req.product, q, req.stock) })
     match r {
-        Ok(q) => json.to_string(Done(true))
+        Ok(q) => text(json.to_string(Done(true)))
         Err(e) => error(e)
     }
 }

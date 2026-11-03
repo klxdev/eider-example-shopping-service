@@ -8,14 +8,17 @@
 //! change is error -32001 with the shared rule's message, and the `data` member names the
 //! rule's code (shared.code).
 
+import std.serial
 import json
 import rpc.jsonrpc
 import rpc.service
 import shared
 import server.store
 
+@[derive(Serialize, Deserialize)]
 type Restock = { product_id: i64, qty: i64 }
 
+@[derive(Serialize, Deserialize)]
 type SetPrice = { product_id: i64, cents: i64 }
 
 fn refused(e: store.StoreError) -> jsonrpc.Error {
@@ -24,10 +27,11 @@ fn refused(e: store.StoreError) -> jsonrpc.Error {
         store.Rule(r) => shared.code(r) as i64
         _ => 0
     }
-    jsonrpc.error_data(-32001, store.message(e).bytes(), json.to_json(RuleCode(code)))
+    jsonrpc.error_data(-32001, store.message(e).bytes(), json.to_bytes(RuleCode(code)).unwrap_or(List.new()))
 }
 
 /// The `data` of a refused change: the shared rule's code.
+@[derive(Serialize)]
 type RuleCode = { code: i64 }
 
 fn lift[T](r: Result[T, store.StoreError]) -> Result[T, jsonrpc.Error] {

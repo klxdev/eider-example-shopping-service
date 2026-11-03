@@ -4,6 +4,7 @@
 //! codes exist without asking each other. Codes are compared after `normalize` (trimmed,
 //! upper case), so " save10" is SAVE10.
 
+import std.serial
 import std.strings
 import shared
 import shared.money
@@ -91,6 +92,7 @@ pub fn describe(c: Coupon) -> String {
 
 /// A coupon as the API and the web page show it: its kind as text (`describe`). In JSON:
 /// `{"id":1,"code":"SAVE10","description":"10% off","min_cents":0}`.
+@[derive(Serialize)]
 pub type Info = { id: i32, code: String, description: String, min_cents: i64 }
 
 /// `c` as the `Info` people see.

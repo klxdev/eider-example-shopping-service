@@ -91,14 +91,16 @@ JSON and in JavaScript.
   there is a schema attribute. The TypeScript client's types are generated from the same
   document, so the page, the description and the checks can't drift apart, and the tests run
   every response through `openapi.check_response` against its operation.
-- **Automatic JSON derive.** `Encode` and `Decode` are `@[derive]` traits of eider-json, so
-  every record and enum has `json.to_json`/`json.to_string` and `json.from_json` with no impl:
+- **Opt-in serialization.** Records say `@[derive(Serialize)]` (responses) or
+  `@[derive(Serialize, Deserialize)]` (request bodies, admin parameters), and eider-json writes
+  and reads them (`json.to_bytes`/`json.to_string`, `json.from_bytes`) through `std/serial`:
   the API's responses, the admin API's parameters and results, the request bodies and the
   WebAssembly module's answers (`shared-wasm/wire.ei`) come from the records' fields by
-  comptime reflection. `@[json(name = "price_cents")]`, `@[json(flatten)]` (an order's customer, the
-  `ok` of a wire reply) and `@[json(skip)]` shape them; the one impl left is `Money`'s, a
-  deliberate override that writes a bare number (`shared/money.ei`), with its schema beside the
-  API's in `server/api.ei`.
+  comptime reflection, and a field with no impl is a compile error with its path.
+  `@[serial(name = "price_cents")]`, `@[json(flatten)]` (an order's customer, the `ok` of a wire
+  reply) and `@[serial(skip)]` shape them; the one hand-written impl is `Money`'s, a deliberate
+  override that writes a bare number (`shared/money.ei`), with its schema beside the API's in
+  `server/api.ei`.
 - **Sharing code through WebAssembly.** `eider build --wasm shared-wasm/wasm.ei` compiles the
   same modules the server imports. The page checks quantities against stock, validates the
   checkout form, looks up coupons and computes the cart's totals in the browser, and shows

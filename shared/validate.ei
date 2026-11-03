@@ -1,6 +1,7 @@
 //! shared/validate: the checks on what a shopper types, shared by the server (which
 //! enforces them) and the web page (which shows them before a request is sent).
 
+import std.serial
 import std.strings
 import json
 import shared
@@ -68,6 +69,7 @@ pub fn email(e: String) -> Result[String, shared.ShopError] {
 }
 
 /// A customer at checkout.
+@[derive(Serialize)]
 pub type Customer = { name: String, email: String }
 
 /// The customer, or every field that is wrong (for a form that marks each one).

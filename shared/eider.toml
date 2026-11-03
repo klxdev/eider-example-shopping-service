@@ -4,7 +4,7 @@ version = "0.1.0"
 eider = "0.5"
 description = "Shopping domain logic shared by the server (native) and the web front end (WebAssembly): money, carts, coupons, tax, validation. Pure: no capabilities."
 
-# the JSON of Quote, Customer, Coupon.Info and Money (derived codecs, for the server's API and
+# the JSON of Quote, Customer, Coupon.Info and Money (serialization, for the server's API and
 # the WebAssembly module's answers); pure, granted nothing
 [deps.json]
 git = "https://github.com/klxdev/eider-json.git"

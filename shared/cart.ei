@@ -10,6 +10,7 @@
 //! Lists are values in Eider: a caller's cart changes only where it passes `inout`, so a
 //! failed `add` (an Err) leaves the cart as it was.
 
+import std.serial
 import json
 import shared
 import shared.money
@@ -30,17 +31,19 @@ pub const FREE_SHIPPING_FROM: i64 = 5000
 pub type Item = { product_id: i64, qty: i64 }
 
 /// An item with its unit price: what pricing needs.
+@[derive(Serialize)]
 pub type Line = { product_id: i64, unit: money.Money, qty: i64 }
 
 /// The price of a cart. `coupon_applied` is false when a coupon was given but the subtotal
 /// is below its minimum (the cart changed after the coupon was added). In JSON (the
 /// server's API) its members are the amounts in cents: `{"subtotal_cents":...}`.
+@[derive(Serialize)]
 pub type Quote = {
-    @[json(name = "subtotal_cents")] subtotal: money.Money
-    @[json(name = "discount_cents")] discount: money.Money
-    @[json(name = "shipping_cents")] shipping: money.Money
-    @[json(name = "tax_cents")] tax: money.Money
-    @[json(name = "total_cents")] total: money.Money
+    @[serial(name = "subtotal_cents")] subtotal: money.Money
+    @[serial(name = "discount_cents")] discount: money.Money
+    @[serial(name = "shipping_cents")] shipping: money.Money
+    @[serial(name = "tax_cents")] tax: money.Money
+    @[serial(name = "total_cents")] total: money.Money
     coupon_applied: bool
 }
 
