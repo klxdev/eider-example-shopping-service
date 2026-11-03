@@ -90,7 +90,7 @@ type CodeIn = { code: String }
 type BuyerIn = { name: String, email: String }
 
 /// An order as the API shows it: the order's members and when it was placed (RFC 3339).
-type OrderBody = { @json(flatten) order: store.Order, created_at: String }
+type OrderBody = { @[json(flatten)] order: store.Order, created_at: String }
 
 fn order_body(o: store.Order) -> OrderBody {
     let at = time.timestamp(o.created_ns / 1000000000, o.created_ns % 1000000000).rfc3339()

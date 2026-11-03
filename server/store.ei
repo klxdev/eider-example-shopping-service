@@ -12,7 +12,7 @@
 //! the records.
 //!
 //! The records the API returns are written as JSON by codecs eider-json derives from their
-//! fields (`json.encode_record`; eider-lang's docs/site/guide/json.md): `@json(name = ...)`
+//! fields (`json.encode_record`; eider-lang's docs/site/guide/json.md): `@[json(name = ...)]`
 //! gives an amount its `..._cents` member, and an order's customer is flattened into it.
 
 import std.sort
@@ -29,7 +29,7 @@ pub type Product = {
     sku: String
     name: String
     description: String
-    @json(name = "price_cents") price: money.Money
+    @[json(name = "price_cents")] price: money.Money
     stock: i64
 }
 
@@ -41,9 +41,9 @@ type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
 pub type ViewLine = {
     product_id: i64
     name: String
-    @json(name = "unit_cents") unit: money.Money
+    @[json(name = "unit_cents")] unit: money.Money
     qty: i64
-    @json(name = "line_total_cents") line_total: money.Money
+    @[json(name = "line_total_cents")] line_total: money.Money
     stock: i64
 }
 
@@ -52,9 +52,9 @@ pub type CartView = { id: i64, lines: List[ViewLine], coupon: Option[String], qu
 pub type OrderLine = {
     product_id: i64
     name: String
-    @json(name = "unit_cents") unit: money.Money
+    @[json(name = "unit_cents")] unit: money.Money
     qty: i64
-    @json(name = "line_total_cents") line_total: money.Money
+    @[json(name = "line_total_cents")] line_total: money.Money
 }
 
 /// An order. In JSON the customer's name and email are the order's own members, and the
@@ -64,8 +64,8 @@ pub type Order = {
     lines: List[OrderLine]
     coupon: Option[String]
     quote: cart.Quote
-    @json(flatten) customer: validate.Customer
-    @json(skip) created_ns: i64
+    @[json(flatten)] customer: validate.Customer
+    @[json(skip)] created_ns: i64
 }
 
 /// What the store can refuse: a shared rule, or a cart or order that doesn't exist.
@@ -94,7 +94,7 @@ pub type Stats = {
     units_in_stock: i64
     open_carts: i64
     orders: i64
-    @json(name = "revenue_cents") revenue: money.Money
+    @[json(name = "revenue_cents")] revenue: money.Money
 }
 
 /// The shop's state; copies share it.

@@ -94,7 +94,7 @@ pub type Failure = { ok: bool, errors: List[ErrorInfo] }
 pub type Done = { ok: bool }
 
 /// `{"ok":true,...}` with the members of `body`.
-pub type Reply[T] = { ok: bool, @json(flatten) body: T }
+pub type Reply[T] = { ok: bool, @[json(flatten)] body: T }
 
 /// `{"ok":true,"coupon":{...}}`.
 pub type Found = { coupon: coupon.Info }

@@ -91,12 +91,12 @@ JSON and in JavaScript.
   there is a schema attribute. The TypeScript client's types are generated from the same
   document, so the page, the description and the checks can't drift apart, and the tests run
   every response through `openapi.check_response` against its operation.
-- **Automatic JSON derive.** `Encode` and `Decode` are `@derive` traits of eider-json, so
+- **Automatic JSON derive.** `Encode` and `Decode` are `@[derive]` traits of eider-json, so
   every record and enum has `json.to_json`/`json.to_string` and `json.from_json` with no impl:
   the API's responses, the admin API's parameters and results, the request bodies and the
   WebAssembly module's answers (`shared-wasm/wire.ei`) come from the records' fields by
-  comptime reflection. `@json(name = "price_cents")`, `@json(flatten)` (an order's customer, the
-  `ok` of a wire reply) and `@json(skip)` shape them; the one impl left is `Money`'s, a
+  comptime reflection. `@[json(name = "price_cents")]`, `@[json(flatten)]` (an order's customer, the
+  `ok` of a wire reply) and `@[json(skip)]` shape them; the one impl left is `Money`'s, a
   deliberate override that writes a bare number (`shared/money.ei`), with its schema beside the
   API's in `server/api.ei`.
 - **Sharing code through WebAssembly.** `eider build --wasm shared-wasm/wasm.ei` compiles the
