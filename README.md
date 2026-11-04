@@ -250,7 +250,7 @@ open. Closed ones were fixed in Eider 0.4 or 0.5 and the code uses the fix.
 | [eider-rpc#2](https://github.com/klxdev/eider-rpc/issues/2) | Serving JSON-RPC shouldn't need a `net, io, clock` grant | open |
 | [eider-openapi#3](https://github.com/klxdev/eider-openapi/issues/3) | String accessors on `openapi.Input` | open (`query_text` and `path_text` shipped in 0.5 and are used) |
 
-Already tracked, and waited on here: `let ... else` (#106), List literals (#49), `if` as an
+Already tracked, and waited on here: embedding the built front end in the binary (`comptime embed` takes text only, eider-lang#160; see CHANGELOG), `let ... else` (#106), List literals (#49), `if` as an
 argument (#48), computed `assert`/`panic` messages (#47), grants per imported module (#60),
 and attributes for the schema bounds a type can't state (eider-lang#101). Eider 0.5 brought derived schemas and typed handlers (eider-openapi#1), `json.to_string`, `access_log_with`, tracing and per-route metrics, `http/testing`, `check_response` and `rpc/service`; Eider 0.4 brought what the example
 waited for: automatic JSON derive (#99), Strings across the WebAssembly boundary, core.sys

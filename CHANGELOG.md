@@ -27,6 +27,16 @@
   (0 warnings in every module of the server, in the e2e test and in `shared-wasm`), so nothing is
   allowed anywhere. `shared` (a library without `main`) can't be linted yet (E0112,
   eider-lang#163); its setting is ready and was checked with a throwaway entry file.
+- Not adopted: embedding `web/dist` in the binary (`comptime embed`). `web/dist` is 4 files, three
+  of them text (index.html 0.9 KB, a script 19 KB, a stylesheet 1.6 KB) and the wasm module (85 KB,
+  most of the bytes) binary, which `embed` refuses until `List[u8]` can be embedded
+  (eider-lang#160). But a text-only embed would not work either: `embed` reads only inside the
+  declaring package, and `web/dist` is outside `server/`; the file names carry a content hash
+  (`index-CVYj5VmB.js`) and `embed` takes a literal path, so a generated source file would have to
+  list them; and the server would have to be built twice (the client is generated from its
+  `/openapi.json`, the page from the client). A hybrid (text embedded, wasm from disk) keeps the
+  disk path, `--web.dir` and the missing-build page and adds all of that, so `server/assets.ei`
+  stays as it is until binary embedding exists.
 
 ## 0.6.0
 
