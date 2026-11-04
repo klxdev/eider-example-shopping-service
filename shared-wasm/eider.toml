@@ -12,3 +12,8 @@ path = "../shared"
 [deps.json]
 git = "https://github.com/klxdev/eider-json.git"
 version = "0.6.0"
+
+# `eider lint` (scripts/test.sh): every lint is an error here, so a new finding fails the tests;
+# there is nothing to allow
+[lints]
+all = "deny"

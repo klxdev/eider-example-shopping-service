@@ -181,6 +181,7 @@ sh scripts/test.sh           # build, then everything below
 
 | What | Where | Runs with |
 |---|---|---|
+| lints: `[lints] all = "deny"` in each `eider.toml` | `server` (all modules, via `main.ei`; the e2e test), `shared-wasm` | `eider lint` |
 | money, cart, coupons, validation | `shared/tests/*_test.ei` | `eider test` |
 | the wasm module's requests and answers | `shared-wasm/tests/*_test.ei` | `eider test` |
 | the store (carts, checkout atomicity, admin); the API in process (`http/testing`, every response checked against its operation), errors, encoders, static paths | `server/tests/{store,api}_test.ei` | `eider test` |
@@ -242,7 +243,7 @@ open. Closed ones were fixed in Eider 0.4 or 0.5 and the code uses the fix.
 | [eider-lang#147](https://github.com/klxdev/eider-lang/issues/147) | `eider run --watch` | open |
 | [eider-lang#149](https://github.com/klxdev/eider-lang/issues/149) | Explicit type arguments in calls (`json.from_json[T](x)`), inferring a generic result through `?` | open, not needed here any more (`openapi.json_body`) |
 | [eider-lang#162](https://github.com/klxdev/eider-lang/issues/162) | Errors in a test file without `main` are reported against another file | open |
-| [eider-lang#163](https://github.com/klxdev/eider-lang/issues/163) | `eider lint` for a library module or package without `main` | open (only `main.ei` and the e2e test are linted, clean) |
+| [eider-lang#163](https://github.com/klxdev/eider-lang/issues/163) | `eider lint` for a library module or package without `main` | open (`shared` can't be linted, and the test files without a `main`; the rest is, clean) |
 | [eider-http#7](https://github.com/klxdev/eider-http/issues/7) | A static-file handler | open |
 | [eider-http#8](https://github.com/klxdev/eider-http/issues/8) | `access_log` should write through a `std/log` Logger | closed (`access_log_with`, 0.5) |
 | [eider-json#2](https://github.com/klxdev/eider-json/issues/2) | `to_string`/`from_string`: JSON as String, not List[u8] | closed (0.5) |

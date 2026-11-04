@@ -4,6 +4,7 @@
 #   shared-wasm/tests/*_test.ei  the WebAssembly module's protocol, natively (eider test)
 #   server/tests/*_test.ei     the store, the API's errors and encoders, static paths
 #   server/tests/e2e_test.ei   the whole service over loopback (eider run)
+#   eider lint                 [lints] in each eider.toml: every lint denied (shared: see below)
 #   web                        tsc, vitest (the wasm module and the client), Playwright
 # Exits non-zero when anything fails. SKIP_BUILD=1 skips the build; SKIP_E2E_BROWSER=1
 # skips Playwright.
@@ -11,6 +12,13 @@ set -eu
 . "$(dirname "$0")/env.sh"
 
 [ "${SKIP_BUILD:-}" = 1 ] || sh "$ROOT/scripts/build.sh"
+
+step "eider lint"
+# server: the entry module's package (every server module) and the end-to-end test; the other
+# test files have no main. shared-wasm: its --wasm entry. shared is a library with no main, and
+# `eider lint` needs one (E0112; eider-lang#163): its [lints] apply once it can be linted.
+(cd "$ROOT/server" && eider lint main.ei && eider lint tests/e2e_test.ei)
+(cd "$ROOT/shared-wasm" && eider lint --wasm wasm.ei)
 
 step "shared: eider test"
 cd "$ROOT/shared"

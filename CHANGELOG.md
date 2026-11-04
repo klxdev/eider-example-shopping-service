@@ -22,6 +22,11 @@
   same and a number outside 0 to `MAX_CENTS` is still a read error, not a trap (tested on a record
   in `shared/tests/money_test.ei`). The cost: each of the 12 amount fields says `with = money`,
   and a `Money` field without it is a compile error (E0833) instead of working by default.
+- `eider lint` runs in `scripts/test.sh`, with `[lints] all = "deny"` in the `eider.toml` of
+  `shared`, `shared-wasm` and `server`: any finding fails the tests. The existing code had none
+  (0 warnings in every module of the server, in the e2e test and in `shared-wasm`), so nothing is
+  allowed anywhere. `shared` (a library without `main`) can't be linted yet (E0112,
+  eider-lang#163); its setting is ready and was checked with a throwaway entry file.
 
 ## 0.6.0
 
