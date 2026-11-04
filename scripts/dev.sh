@@ -18,17 +18,24 @@ sh "$ROOT/scripts/build.sh"
 STAMP="$ROOT/server/target/.dev-stamp"
 touch "$STAMP"
 SERVER_PID=""
-PORT=${PORT:-8080}
+PORT=${PORT:-8181}
 
 start_server() {
-    (cd "$ROOT/server" && exec env SHOP_ADMIN_TOKEN=${SHOP_ADMIN_TOKEN:-dev} SHOP_CORS_ORIGIN=http://localhost:5173 ./target/server --port="$PORT") &
-    SERVER_PID=$!
+  (cd "$ROOT/server" && exec env SHOP_ADMIN_TOKEN=${SHOP_ADMIN_TOKEN:-dev} SHOP_CORS_ORIGIN=http://localhost:5173 ./target/server --port="$PORT") &
+  SERVER_PID=$!
 }
 stop_server() {
-    if [ -n "$SERVER_PID" ]; then kill -TERM "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; fi
-    SERVER_PID=""
+  if [ -n "$SERVER_PID" ]; then
+    kill -TERM "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  SERVER_PID=""
 }
-cleanup() { stop_server; [ -n "${VITE_PID:-}" ] && kill "$VITE_PID" 2>/dev/null; exit 0; }
+cleanup() {
+  stop_server
+  [ -n "${VITE_PID:-}" ] && kill "$VITE_PID" 2>/dev/null
+  exit 0
+}
 trap cleanup INT TERM
 
 start_server
@@ -36,17 +43,17 @@ start_server
 VITE_PID=$!
 
 while true; do
-    sleep 1
-    shared=$(find "$ROOT/shared" "$ROOT/shared-wasm" -name '*.ei' -newer "$STAMP" | head -1)
-    server=$(find "$ROOT/server" -name '*.ei' -not -path '*/target/*' -newer "$STAMP" | head -1)
-    [ -z "$shared$server" ] && continue
-    touch "$STAMP"
-    echo "dev: ${shared:-$server} changed; rebuilding"
-    if [ -n "$shared" ]; then
-        (cd "$ROOT/shared-wasm" && eider build --wasm wasm.ei -o ../web/src/wasm/shared) || continue
-    fi
-    (cd "$ROOT/server" && eider build main.ei -o target/server) || continue
-    (cd "$ROOT/web" && npm run --silent gen) || true
-    stop_server
-    start_server
+  sleep 1
+  shared=$(find "$ROOT/shared" "$ROOT/shared-wasm" -name '*.ei' -newer "$STAMP" | head -1)
+  server=$(find "$ROOT/server" -name '*.ei' -not -path '*/target/*' -newer "$STAMP" | head -1)
+  [ -z "$shared$server" ] && continue
+  touch "$STAMP"
+  echo "dev: ${shared:-$server} changed; rebuilding"
+  if [ -n "$shared" ]; then
+    (cd "$ROOT/shared-wasm" && eider build --wasm wasm.ei -o ../web/src/wasm/shared) || continue
+  fi
+  (cd "$ROOT/server" && eider build main.ei -o target/server) || continue
+  (cd "$ROOT/web" && npm run --silent gen) || true
+  stop_server
+  start_server
 done
