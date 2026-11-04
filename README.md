@@ -85,10 +85,13 @@ JSON and in JavaScript.
   member, 413, 415) and the served `/openapi.json`. The handlers are plain functions over
   records: `openapi.json_body_with` reads the body into an `AddIn`, `QtyIn`, ... and writes the
   answer, `openapi.json_out` writes the answer of a route without a body, both through
-  eider-json's derived codecs. The schemas' structure is `T.json_schema()` (eider-openapi's
-  derived `Schematic`); written by hand are the bounds a type can't state (quantities
-  `validate.MAX_QTY`, name and sku lengths, the email format, `Money`'s `money.MAX_CENTS`), until
-  there is a schema attribute. The TypeScript client's types are generated from the same
+  eider-json's derived codecs. The schemas are `T.json_schema()` (eider-openapi's derived `Schematic`), and the bounds are
+  `@[check(...)]` on the record fields (`min`, `max`, `min_len`, `max_len`, `format = "email"`
+  from `std/validate`): the derived decoder enforces them, the schema states them, and a wrong
+  field is a 400 with its pointer, from the one attribute. What a type can't state stays code:
+  `Money`'s range (its own schema), the path parameters, and the rules in `shared/validate.ei`
+  that clean or judge a value (trimming, the domain of the address, control characters in a
+  name), which answer 422 behind the 400. The TypeScript client's types are generated from the same
   document, so the page, the description and the checks can't drift apart, and the tests run
   every response through `openapi.check_response` against its operation.
 - **Opt-in serialization.** Records say `@[derive(Serialize)]` (responses) or

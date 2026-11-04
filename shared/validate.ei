@@ -3,6 +3,7 @@
 
 import std.serial
 import std.strings
+import std.validate as sv
 import json
 import shared
 
@@ -13,10 +14,10 @@ pub const MAX_QTY: i64 = 10
 pub const MAX_LINES: i64 = 20
 
 /// A name is 1 to MAX_NAME characters after trimming.
-pub const MAX_NAME: usize = 80
+pub const MAX_NAME: i64 = 80
 
 /// The longest email address (RFC 5321's path limit).
-pub const MAX_EMAIL: usize = 254
+pub const MAX_EMAIL: i64 = 254
 
 /// A quantity for a cart line.
 pub fn qty(q: i64) -> Result[i64, shared.ShopError] {
@@ -34,43 +35,30 @@ pub fn stock(id: i64, wanted: i64, have: i64) -> Result[i64, shared.ShopError] {
 pub fn name(n: String) -> Result[String, shared.ShopError] {
     let t = strings.trim(n)
     let count = strings.char_count(t.copy())
-    if count == 0 || count > MAX_NAME { return Err(shared.InvalidName) }
+    if count == 0 || count as i64 > MAX_NAME { return Err(shared.InvalidName) }
     for b in t.bytes() {
         if b < 32 || b == 127 { return Err(shared.InvalidName) }
     }
     Ok(t)
 }
 
-/// An email address, trimmed and with its domain in lower case. Deliberately simple: one
-/// `@`, a local part of 1 to 64 printable ASCII characters other than space, and a domain
-/// of dot-separated labels (letters, digits, `-`), at least two of them.
+/// An email address, trimmed and with its domain in lower case; the syntax is
+/// `std/validate`'s `email` (the same rule `@[check(format = "email")]` applies to a request).
 pub fn email(e: String) -> Result[String, shared.ShopError] {
     let t = strings.trim(e)
-    if t.len() < 3 || t.len() > MAX_EMAIL { return Err(shared.InvalidEmail) }
-    let parts = strings.split(t.copy(), "@")
-    if parts.len() != 2 { return Err(shared.InvalidEmail) }
-    let local = parts[0].copy()
-    let domain = strings.to_lower(parts[1].copy())
-    if local.len() == 0 || local.len() > 64 { return Err(shared.InvalidEmail) }
-    for b in local.bytes() {
-        if b <= 32 || b >= 127 { return Err(shared.InvalidEmail) }
+    if !sv.email(t.bytes()) { return Err(shared.InvalidEmail) }
+    match strings.split_once(t, "@") {
+        Some(parts) => Ok("{parts.0}@{strings.to_lower(parts.1.copy())}")
+        None => Err(shared.InvalidEmail)
     }
-    let labels = strings.split(domain.copy(), ".")
-    if labels.len() < 2 { return Err(shared.InvalidEmail) }
-    for l in labels {
-        if l.len() == 0 || l.len() > 63 { return Err(shared.InvalidEmail) }
-        if l.byte(0) == 45 || l.byte(l.len() - 1) == 45 { return Err(shared.InvalidEmail) }
-        for b in l.bytes() {
-            let ok = (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 45
-            if !ok { return Err(shared.InvalidEmail) }
-        }
-    }
-    Ok("{local}@{domain}")
 }
 
 /// A customer at checkout.
-@[derive(Serialize)]
-pub type Customer = { name: String, email: String }
+@[derive(Serialize, Deserialize)]
+pub type Customer = {
+    @[check(min_len = 1, max_len = MAX_NAME)] name: String
+    @[check(format = "email", min_len = 3, max_len = MAX_EMAIL)] email: String
+}
 
 /// The customer, or every field that is wrong (for a form that marks each one).
 pub fn customer(n: String, e: String) -> Result[Customer, List[shared.ShopError]] {

@@ -92,18 +92,20 @@ impl derive.Schematic for store.CartView {}
 impl derive.Schematic for store.OrderLine {}
 impl derive.Schematic for store.Order {}
 
-/// Request bodies, as the API's JSON members.
+/// Request bodies, as the API's JSON members. The rules are `@[check]` on the fields: the
+/// decoder enforces them, `json_schema()` states them, and the 400 names the field. The
+/// checkout body is `validate.Customer`, the record the shared package checks at checkout.
 @[derive(Serialize, Deserialize, Schematic)]
-type AddIn = { product_id: i64, qty: i64 }
+type AddIn = {
+    @[check(min = 1)] product_id: i64
+    @[check(min = 1, max = validate.MAX_QTY)] qty: i64
+}
 
 @[derive(Serialize, Deserialize, Schematic)]
-type QtyIn = { qty: i64 }
+type QtyIn = { @[check(min = 0, max = validate.MAX_QTY)] qty: i64 }
 
 @[derive(Serialize, Deserialize, Schematic)]
-type CodeIn = { code: String }
-
-@[derive(Serialize, Deserialize, Schematic)]
-type BuyerIn = { name: String, email: String }
+type CodeIn = { @[check(min_len = 1, max_len = 32)] code: String }
 
 /// An order as the API shows it: the order's members and when it was placed (RFC 3339).
 @[derive(Serialize, Schematic)]
@@ -126,9 +128,9 @@ fn coupon_infos(cs: List[coupon.Coupon]) -> List[coupon.Info] {
     infos
 }
 
-// ---- schemas: the structure comes from the types (`T.json_schema()`); written by hand are
-// the bounds a type can't state (lengths, quantities, formats) until there is a schema
-// attribute (TODO(eider-lang#101): @check)
+// ---- schemas: the structure and the bounds of every record come from the types
+// (`T.json_schema()` reads the fields' `@[check]`); written by hand are the path and query
+// parameters, which are not fields, the descriptions, and the references to components
 
 /// `s` with its property `name` replaced by `p`.
 fn with(s: schema.Schema, name: str, p: schema.Schema) -> schema.Schema {
@@ -142,66 +144,22 @@ fn with(s: schema.Schema, name: str, p: schema.Schema) -> schema.Schema {
 
 fn id_schema() -> schema.Schema { schema.integer().format("int64").min(1) }
 
-fn qty_schema(min: i64) -> schema.Schema { schema.integer().format("int64").min(min).max(validate.MAX_QTY) }
+fn email_schema() -> schema.Schema { schema.string().format("email").min_length(3).max_length(validate.MAX_EMAIL) }
 
-fn code_schema() -> schema.Schema { schema.string().min_length(1).max_length(32) }
+fn product_schema() -> schema.Schema { store.Product.json_schema().describe("A product in the catalog") }
 
-fn name_schema() -> schema.Schema { schema.string().min_length(1).max_length(validate.MAX_NAME as i64) }
-
-fn email_schema() -> schema.Schema { schema.string().format("email").min_length(3).max_length(validate.MAX_EMAIL as i64) }
-
-fn product_schema() -> schema.Schema {
-    let mut s = store.Product.json_schema().describe("A product in the catalog")
-    s = with(s, "id", id_schema())
-    s = with(s, "sku", schema.string().min_length(1).max_length(32))
-    s = with(s, "name", schema.string().min_length(1).max_length(100))
-    with(s, "description", schema.string().max_length(1000))
-}
-
-fn line_schema() -> schema.Schema {
-    let s = store.ViewLine.json_schema().describe("A cart line with its product's current price and stock")
-    with(with(s, "product_id", id_schema()), "qty", qty_schema(1))
-}
+fn line_schema() -> schema.Schema { store.ViewLine.json_schema().describe("A cart line with its product's current price and stock") }
 
 fn cart_schema(line: schema.Schema, quote: schema.Schema) -> schema.Schema {
-    let mut s = store.CartView.json_schema().describe("A shopping cart")
-    s = with(s, "id", id_schema())
-    s = with(s, "lines", schema.array(line).max_length(validate.MAX_LINES))
-    s = with(s, "coupon", code_schema().nullable())
-    with(s, "quote", quote)
+    let s = store.CartView.json_schema().describe("A shopping cart")
+    with(with(s, "lines", schema.array(line).max_length(validate.MAX_LINES)), "quote", quote)
 }
 
-fn order_line_schema() -> schema.Schema {
-    let s = store.OrderLine.json_schema().describe("A line of an order, at the price paid")
-    with(with(s, "product_id", id_schema()), "qty", qty_schema(1))
-}
+fn order_line_schema() -> schema.Schema { store.OrderLine.json_schema().describe("A line of an order, at the price paid") }
 
 fn order_schema(line: schema.Schema, quote: schema.Schema) -> schema.Schema {
-    let mut s = OrderBody.json_schema().describe("A placed order")
-    s = with(s, "id", id_schema())
-    s = with(s, "lines", schema.array(line))
-    s = with(s, "coupon", code_schema().nullable())
-    s = with(s, "quote", quote)
-    s = with(s, "name", name_schema())
-    s = with(s, "email", email_schema())
-    with(s, "created_at", schema.string().format("date-time"))
-}
-
-fn add_line_schema() -> schema.Schema {
-    let s = AddIn.json_schema().describe("A product to add to the cart")
-    with(with(s, "product_id", id_schema()), "qty", qty_schema(1))
-}
-
-fn set_qty_schema() -> schema.Schema {
-    with(QtyIn.json_schema().describe("The new quantity; 0 removes the line"), "qty", qty_schema(0))
-}
-
-fn coupon_code_schema() -> schema.Schema {
-    with(CodeIn.json_schema().describe("A coupon code (case and surrounding spaces don't matter)"), "code", code_schema())
-}
-
-fn checkout_schema() -> schema.Schema {
-    with(with(BuyerIn.json_schema().describe("Who is buying"), "name", name_schema()), "email", email_schema())
+    let s = OrderBody.json_schema().describe("A placed order")
+    with(with(with(s, "lines", schema.array(line)), "quote", quote), "created_at", schema.string().format("date-time"))
 }
 
 /// The described API over `s`. `now_ns` is the wall clock (orders' created_at), passed in so
@@ -242,12 +200,12 @@ pub fn service(s: store.Store, now_ns: fn() -> i64) -> openapi.Service {
     svc.add(view, openapi.json_out(|i: openapi.Input| -> Result[store.CartView, problem.ApiError] { lift(s.cart(i.path_int("id")?)) }))
 
     let mut add = openapi.op("POST", r"/api/carts/{id}/lines").operation_id("addLine").summary("Add a product to a cart").tag("cart")
-    add = add.path_param("id", id).max_body(1024).body(add_line_schema(), "The product and how many")
+    add = add.path_param("id", id).max_body(1024).body(AddIn.json_schema().describe("A product to add to the cart"), "The product and how many")
     add = add.returns(200, "The cart", cart_ref).fails(404, "No such cart or product").fails(409, "Not enough stock").fails(422, "Too many of it, or too many products")
     svc.add(add, openapi.json_body_with(|i: openapi.Input, b: AddIn| -> Result[store.CartView, problem.ApiError] { lift(s.add_line(i.path_int("id")?, b.product_id, b.qty)) }))
 
     let mut set = openapi.op("PUT", r"/api/carts/{id}/lines/{product_id}").operation_id("setLine").summary("Set a line's quantity (0 removes it)").tag("cart")
-    set = set.path_param("id", id).path_param("product_id", id).max_body(1024).body(set_qty_schema(), "The quantity")
+    set = set.path_param("id", id).path_param("product_id", id).max_body(1024).body(QtyIn.json_schema().describe("The new quantity; 0 removes the line"), "The quantity")
     set = set.returns(200, "The cart", cart_ref).fails(404, "No such cart or product").fails(409, "Not enough stock").fails(422, "Too many products")
     svc.add(set, openapi.json_body_with(|i: openapi.Input, b: QtyIn| -> Result[store.CartView, problem.ApiError] { lift(s.set_line(i.path_int("id")?, i.path_int("product_id")?, b.qty)) }))
 
@@ -256,7 +214,7 @@ pub fn service(s: store.Store, now_ns: fn() -> i64) -> openapi.Service {
     svc.add(rm, openapi.json_out(|i: openapi.Input| -> Result[store.CartView, problem.ApiError] { lift(s.remove_line(i.path_int("id")?, i.path_int("product_id")?)) }))
 
     let mut cp = openapi.op("PUT", r"/api/carts/{id}/coupon").operation_id("applyCoupon").summary("Apply a coupon").tag("cart")
-    cp = cp.path_param("id", id).max_body(1024).body(coupon_code_schema(), "The code")
+    cp = cp.path_param("id", id).max_body(1024).body(CodeIn.json_schema().describe("A coupon code (case and surrounding spaces don't matter)"), "The code")
     cp = cp.returns(200, "The cart", cart_ref).fails(404, "No such cart").fails(422, "No such coupon, or the subtotal is below its minimum")
     svc.add(cp, openapi.json_body_with(|i: openapi.Input, b: CodeIn| -> Result[store.CartView, problem.ApiError] { lift(s.set_coupon(i.path_int("id")?, b.code)) }))
 
@@ -266,9 +224,9 @@ pub fn service(s: store.Store, now_ns: fn() -> i64) -> openapi.Service {
 
     let mut buy = openapi.op("POST", r"/api/carts/{id}/checkout").operation_id("checkout").summary("Buy a cart").tag("orders")
     buy = buy.describe("Checks the stock of every line, prices the cart with the shared rules, takes the stock and records the order in one critical section; the cart is deleted.")
-    buy = buy.path_param("id", id).max_body(2048).body(checkout_schema(), "Who is buying")
+    buy = buy.path_param("id", id).max_body(2048).body(validate.Customer.json_schema().describe("Who is buying"), "Who is buying")
     buy = buy.returns(201, "The order", order).fails(404, "No such cart").fails(409, "Not enough stock").fails(422, "The cart is empty, or the name or email is not valid")
-    svc.add(buy, openapi.json_body_with(|i: openapi.Input, b: BuyerIn| -> Result[OrderBody, problem.ApiError] {
+    svc.add(buy, openapi.json_body_with(|i: openapi.Input, b: validate.Customer| -> Result[OrderBody, problem.ApiError] {
         let placed = lift(s.checkout(i.path_int("id")?, b.name, b.email, now_ns()))?
         Ok(order_body(placed))
     }))

@@ -1,5 +1,7 @@
 // cart, coupon and validate: the rules both sides share.
 import std.testing
+import std.serial
+import json
 import shared
 import shared.money
 import shared.cart
@@ -133,6 +135,16 @@ test "customer collects every field error" {
         }
     }
     assert validate.customer(String.from("Ada"), String.from("ada@example.com")).is_ok()
+}
+
+test "a decoded Customer is checked by its fields' @[check], every violation together" {
+    let ok: Result[validate.Customer, serial.Error] = json.from_string(String.from("{{\"name\": \"Ada\", \"email\": \"ada@example.com\"}}"))
+    assert ok.is_ok()
+    let bad: Result[validate.Customer, serial.Error] = json.from_string(String.from("{{\"name\": \"\", \"email\": \"ada@nowhere\"}}"))
+    match bad {
+        Ok(c) => assert false
+        Err(e) => assert serial.messages(e).len() == 2
+    }
 }
 
 test "errors have stable codes and messages" {

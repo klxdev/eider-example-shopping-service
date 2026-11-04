@@ -27,10 +27,10 @@ import shared.validate
 
 @[derive(Serialize)]
 pub type Product = {
-    id: i64
-    sku: String
-    name: String
-    description: String
+    @[check(min = 1)] id: i64
+    @[check(min_len = 1, max_len = 32)] sku: String
+    @[check(min_len = 1, max_len = 100)] name: String
+    @[check(max_len = 1000)] description: String
     @[serial(name = "price_cents")] price: money.Money
     stock: i64
 }
@@ -42,23 +42,28 @@ type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
 /// A cart line as shown: the item with its product's name, price and stock now.
 @[derive(Serialize)]
 pub type ViewLine = {
-    product_id: i64
+    @[check(min = 1)] product_id: i64
     name: String
     @[serial(name = "unit_cents")] unit: money.Money
-    qty: i64
+    @[check(min = 1, max = validate.MAX_QTY)] qty: i64
     @[serial(name = "line_total_cents")] line_total: money.Money
     stock: i64
 }
 
 @[derive(Serialize)]
-pub type CartView = { id: i64, lines: List[ViewLine], coupon: Option[String], quote: cart.Quote }
+pub type CartView = {
+    @[check(min = 1)] id: i64
+    @[check(max_len = validate.MAX_LINES)] lines: List[ViewLine]
+    @[check(min_len = 1, max_len = 32)] coupon: Option[String]
+    quote: cart.Quote
+}
 
 @[derive(Serialize)]
 pub type OrderLine = {
-    product_id: i64
+    @[check(min = 1)] product_id: i64
     name: String
     @[serial(name = "unit_cents")] unit: money.Money
-    qty: i64
+    @[check(min = 1, max = validate.MAX_QTY)] qty: i64
     @[serial(name = "line_total_cents")] line_total: money.Money
 }
 
@@ -66,9 +71,9 @@ pub type OrderLine = {
 /// API adds `created_at` as RFC 3339 text (server/api.ei, OrderBody).
 @[derive(Serialize)]
 pub type Order = {
-    id: i64
+    @[check(min = 1)] id: i64
     lines: List[OrderLine]
-    coupon: Option[String]
+    @[check(min_len = 1, max_len = 32)] coupon: Option[String]
     quote: cart.Quote
     @[json(flatten)] customer: validate.Customer
     @[serial(skip)] created_ns: i64

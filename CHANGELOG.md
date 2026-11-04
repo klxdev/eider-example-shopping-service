@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Validation is `@[check(...)]` on the records (eider-lang `std/serial` and `std/validate`):
+  `validate.Customer` (the checkout body, now also what `BuyerIn` was), `AddIn`, `QtyIn`,
+  `CodeIn` and the store's `Product`, `ViewLine`, `CartView`, `OrderLine` and `Order` carry their
+  bounds on the fields. The decoder, the OpenAPI document and the 400's pointers come from them;
+  `/openapi.json` is unchanged (compared before and after).
+  Deleted: the hand-built `name_schema`, `email_schema` (kept only for the `?email=` query),
+  `code_schema`, `qty_schema`, `line_schema` bounds and the `BuyerIn` record in `server/api.ei`,
+  and the hand-written email syntax check in `shared/validate.ei`, which now calls
+  `std/validate`'s `email` (it still trims and lower-cases the domain). `MAX_NAME` and
+  `MAX_EMAIL` are `i64` so an attribute can use them. `std/validate` builds with `--wasm`, so the
+  wasm module keeps using `validate.customer`; the codes and messages of `shared/shared.ei` are
+  unchanged. A body with a padded address (`" ada@example.com "`) is now a 400, not cleaned.
+  Tests: a 400 for each wrong field and a 422 for the domain rules behind it
+  (`server/tests/api_test.ei`), and the decoder in `shared/tests/cart_test.ei`.
+
 ## 0.6.0
 
 For Eider 0.6 (`eider = "0.6"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.6.0.

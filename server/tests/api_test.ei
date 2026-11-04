@@ -91,6 +91,28 @@ test "bodies are checked against the description" {
     assert c.post("/api/carts/1/lines", "text/plain", "x".bytes()).status == 415
 }
 
+test "the request schema refuses first (400, a pointer per field), the domain rules answer 422" {
+    let c = client()
+    let made = c.post("/api/carts", "", List.new())
+    // @[check] on the record: every wrong field is named, nothing reaches the store
+    let bad = c.post_json("/api/carts/1/checkout", "{{\"name\": \"\", \"email\": \"ada@nowhere\"}}")
+    assert bad.status == 400
+    let body = http_testing.text(bad)
+    assert strings.contains(body, "#/name") && strings.contains(body, "#/email")
+    let long = c.post_json("/api/carts/1/checkout", "{{\"name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\", \"email\": \"ada@example.com\"}}")
+    assert long.status == 400 && strings.contains(http_testing.text(long), "#/name")
+    assert c.post_json("/api/carts/1/lines", "{{\"product_id\": 1, \"qty\": 11}}").status == 400
+    assert c.put("/api/carts/1/coupon", "application/json", "{{\"code\": \"\"}}".bytes()).status == 400
+    // what the type can't state is the shared rule: a blank name passes the length check
+    // and is refused by validate.name as 422 with the stable message
+    let blank = c.post_json("/api/carts/1/checkout", "{{\"name\": \"   \", \"email\": \"ada@example.com\"}}")
+    assert blank.status == 422
+    assert strings.contains(http_testing.text(blank), "the name must be 1 to 80 characters")
+    // a valid body for an empty cart is the EmptyCart rule, also 422
+    let empty = c.post_json("/api/carts/1/checkout", "{{\"name\": \"Ada\", \"email\": \"ada@example.com\"}}")
+    assert empty.status == 422 && strings.contains(http_testing.text(empty), "the cart is empty")
+}
+
 test "the access record is a std/log line" {
     let req = http.request("GET", "/api/products".bytes())
     let lg = log.new(log.Info).with(log.fields().text("service", String.from("shop")))
