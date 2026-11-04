@@ -17,18 +17,16 @@ pub const MAX_CENTS: i64 = 9007199254740991
 /// An amount of money, in cents (USD). Always 0 to MAX_CENTS.
 pub type Money = { cents: i64 }
 
-// In JSON an amount is its number of cents (a member named `..._cents`), not an object.
-impl serial.Serialize for Money {
-    fn serialize[S: serial.Serializer](self, inout s: S) -> Result[(), serial.Error] { s.int(self.cents) }
-}
+// In JSON an amount is its number of cents, not an object. This module is the adapter of the
+// fields that hold one: `@[serial(with = money)] price: money.Money` (std/serial, per-field
+// adapters). Reading checks the range with `of`, so a hostile number is an error, never a trap.
+pub fn serialize[S: serial.Serializer](v: Money, inout s: S) -> Result[(), serial.Error] { s.int(v.cents) }
 
-impl serial.Deserialize for Money {
-    fn deserialize[D: serial.Deserializer](d: D) -> Result[Money, serial.Error] {
-        let c = d.read_i64()?
-        match of(c) {
-            Ok(m) => Ok(m)
-            Err(_) => Err(serial.fail(d, "an amount is 0 to MAX_CENTS cents"))
-        }
+pub fn deserialize[D: serial.Deserializer](d: D) -> Result[Money, serial.Error] {
+    let c = d.read_i64()?
+    match of(c) {
+        Ok(m) => Ok(m)
+        Err(_) => Err(serial.fail(d, "an amount is 0 to MAX_CENTS cents"))
     }
 }
 

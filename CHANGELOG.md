@@ -16,6 +16,12 @@
   unchanged. A body with a padded address (`" ada@example.com "`) is now a 400, not cleaned.
   Tests: a 400 for each wrong field and a 422 for the domain rules behind it
   (`server/tests/api_test.ei`), and the decoder in `shared/tests/cart_test.ei`.
+- `Money`'s hand-written `impl serial.Serialize/Deserialize` is gone: `shared/money.ei` is the
+  adapter module of the amount fields (`@[serial(name = "price_cents", with = money)]`, eider-lang
+  #164), with the same `serialize`/`deserialize` bodies, so the wire format is byte for byte the
+  same and a number outside 0 to `MAX_CENTS` is still a read error, not a trap (tested on a record
+  in `shared/tests/money_test.ei`). The cost: each of the 12 amount fields says `with = money`,
+  and a `Money` field without it is a compile error (E0833) instead of working by default.
 
 ## 0.6.0
 

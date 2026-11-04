@@ -101,9 +101,9 @@ JSON and in JavaScript.
   WebAssembly module's answers (`shared-wasm/wire.ei`) come from the records' fields by
   comptime reflection, and a field with no impl is a compile error with its path.
   `@[serial(name = "price_cents")]`, `@[json(flatten)]` (an order's customer, the `ok` of a wire
-  reply) and `@[serial(skip)]` shape them; the one hand-written impl is `Money`'s, a deliberate
-  override that writes a bare number (`shared/money.ei`), with its schema beside the API's in
-  `server/api.ei`.
+  reply) and `@[serial(skip)]` shape them; `Money` is a bare number of cents through a per-field adapter,
+  `@[serial(with = money)]` (`shared/money.ei`'s `serialize`/`deserialize`, which read through the
+  range check), with its schema beside the API's in `server/api.ei`.
 - **Sharing code through WebAssembly.** `eider build --wasm shared-wasm/wasm.ei` compiles the
   same modules the server imports. The page checks quantities against stock, validates the
   checkout form, looks up coupons and computes the cart's totals in the browser, and shows

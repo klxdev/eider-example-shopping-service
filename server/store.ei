@@ -31,7 +31,7 @@ pub type Product = {
     @[check(min_len = 1, max_len = 32)] sku: String
     @[check(min_len = 1, max_len = 100)] name: String
     @[check(max_len = 1000)] description: String
-    @[serial(name = "price_cents")] price: money.Money
+    @[serial(name = "price_cents", with = money)] price: money.Money
     stock: i64
 }
 
@@ -44,9 +44,9 @@ type CartRec = { id: i64, items: List[cart.Item], coupon: Option[String] }
 pub type ViewLine = {
     @[check(min = 1)] product_id: i64
     name: String
-    @[serial(name = "unit_cents")] unit: money.Money
+    @[serial(name = "unit_cents", with = money)] unit: money.Money
     @[check(min = 1, max = validate.MAX_QTY)] qty: i64
-    @[serial(name = "line_total_cents")] line_total: money.Money
+    @[serial(name = "line_total_cents", with = money)] line_total: money.Money
     stock: i64
 }
 
@@ -62,9 +62,9 @@ pub type CartView = {
 pub type OrderLine = {
     @[check(min = 1)] product_id: i64
     name: String
-    @[serial(name = "unit_cents")] unit: money.Money
+    @[serial(name = "unit_cents", with = money)] unit: money.Money
     @[check(min = 1, max = validate.MAX_QTY)] qty: i64
-    @[serial(name = "line_total_cents")] line_total: money.Money
+    @[serial(name = "line_total_cents", with = money)] line_total: money.Money
 }
 
 /// An order. In JSON the customer's name and email are the order's own members, and the
@@ -106,7 +106,7 @@ pub type Stats = {
     units_in_stock: i64
     open_carts: i64
     orders: i64
-    @[serial(name = "revenue_cents")] revenue: money.Money
+    @[serial(name = "revenue_cents", with = money)] revenue: money.Money
 }
 
 /// The shop's state; copies share it.

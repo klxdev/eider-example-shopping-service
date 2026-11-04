@@ -32,18 +32,18 @@ pub type Item = { product_id: i64, qty: i64 }
 
 /// An item with its unit price: what pricing needs.
 @[derive(Serialize)]
-pub type Line = { product_id: i64, unit: money.Money, qty: i64 }
+pub type Line = { product_id: i64, @[serial(with = money)] unit: money.Money, qty: i64 }
 
 /// The price of a cart. `coupon_applied` is false when a coupon was given but the subtotal
 /// is below its minimum (the cart changed after the coupon was added). In JSON (the
 /// server's API) its members are the amounts in cents: `{"subtotal_cents":...}`.
 @[derive(Serialize)]
 pub type Quote = {
-    @[serial(name = "subtotal_cents")] subtotal: money.Money
-    @[serial(name = "discount_cents")] discount: money.Money
-    @[serial(name = "shipping_cents")] shipping: money.Money
-    @[serial(name = "tax_cents")] tax: money.Money
-    @[serial(name = "total_cents")] total: money.Money
+    @[serial(name = "subtotal_cents", with = money)] subtotal: money.Money
+    @[serial(name = "discount_cents", with = money)] discount: money.Money
+    @[serial(name = "shipping_cents", with = money)] shipping: money.Money
+    @[serial(name = "tax_cents", with = money)] tax: money.Money
+    @[serial(name = "total_cents", with = money)] total: money.Money
     coupon_applied: bool
 }
 

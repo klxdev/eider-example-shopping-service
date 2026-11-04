@@ -1,4 +1,7 @@
 // money: checked arithmetic in integer cents.
+import std.serial
+import std.testing
+import json
 import shared.money
 
 
@@ -43,4 +46,19 @@ test "format" {
     assert money.format(m(1299)) == String.from("$12.99")
     assert money.format(m(123456789)) == String.from("$1,234,567.89")
     assert money.format(m(100000)) == String.from("$1,000.00")
+}
+
+/// A record with an amount, shaped like the shop's: the field adapter is this package's `money`.
+@[derive(Serialize, Deserialize)]
+type Priced = { @[serial(name = "price_cents", with = money)] price: money.Money }
+
+test "the field adapter writes a bare number and reads only 0 to MAX_CENTS" {
+    testing.assert_eq(json.to_string(Priced(m(1299))).unwrap(), String.from("{{\"price_cents\":1299}}"))
+    let top = String.from("{{\"price_cents\":9007199254740991}}")
+    let r: Result[Priced, serial.Error] = json.from_string(top)
+    assert r.unwrap().price == m(money.MAX_CENTS)
+    for bad in ["{{\"price_cents\":9007199254740992}}", "{{\"price_cents\":-1}}", "{{\"price_cents\":1.5}}", "{{\"price_cents\":\"12\"}}", "{{}}"] {
+        let b: Result[Priced, serial.Error] = json.from_string(String.from(bad))
+        assert b.is_err(), "a bad amount was accepted"
+    }
 }
