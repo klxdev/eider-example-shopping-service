@@ -1,7 +1,7 @@
 [package]
 name = "shared_wasm"
 version = "0.1.0"
-eider = "0.6"
+eider = "0.7"
 description = "The shared package as a WebAssembly module for the web front end: the exports (wasm.ei) and their text-in, JSON-out protocol (wire.ei). Pure, like shared; kept apart so the server doesn't build the wire format."
 
 # the shop's rules; pure, granted nothing
@@ -11,7 +11,7 @@ path = "../shared"
 # the answers' derived JSON (wire.ei); pure, granted nothing
 [deps.json]
 git = "https://github.com/klxdev/eider-json.git"
-version = "0.6.0"
+version = "0.7.0"
 
 # `eider lint` (scripts/test.sh): every lint is an error here, so a new finding fails the tests;
 # there is nothing to allow

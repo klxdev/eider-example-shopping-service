@@ -3,33 +3,33 @@ version = 1
 
 [[package]]
 name = "http"
-version = "0.6.0"
-source = "git+https://github.com/klxdev/eider-http.git#922af3a98f39cbc0f20362232e16f9d0fd5790d2"
-hash = "sha256-1c9ab9ab719593350bb4b481f491c01b370e5a8c0a65ba718f33170cfbd79c0a"
+version = "0.7.0"
+source = "git+https://github.com/klxdev/eider-http.git#3b857e49c90005af307cd9e96a3b2ca04aa5ad95"
+hash = "sha256-338c54b1079a2427392d273beedf38da738d3d385e4674f139487ded9a2a8e0c"
 deps = ["json"]
 grants = ["clock", "fs", "io", "net", "threads"]
 
 [[package]]
 name = "json"
-version = "0.6.0"
-source = "git+https://github.com/klxdev/eider-json.git#5348222fc87db6748b96ff34d7062a9c334c43a9"
-hash = "sha256-584e9baf7635dc55106415fe2280caa0093cec6b6705fb31293529588730d4fc"
+version = "0.7.0"
+source = "git+https://github.com/klxdev/eider-json.git#aed11befc0110ad3d12c60fdda0bbc2b6c8318fa"
+hash = "sha256-06f5196340b683e124a7043031ef7f45327d77ed04bbc464cc26afe420fbf404"
 deps = []
 grants = []
 
 [[package]]
 name = "openapi"
-version = "0.6.0"
-source = "git+https://github.com/klxdev/eider-openapi.git#a074ea81b2f4e73e92176491cf8ed9a44afd18da"
-hash = "sha256-5bea00684a84b2241ae5347793a09cb1da617064dea80f7765989d202cf16d6e"
+version = "0.7.0"
+source = "git+https://github.com/klxdev/eider-openapi.git#12d59709344a9f3a386c98d307afbffdd214668a"
+hash = "sha256-62f9dd753e87a45c2e9278c8b7e526d4d8d786fd75eaef24838b2ace90ba4acb"
 deps = ["http", "json"]
 grants = []
 
 [[package]]
 name = "rpc"
-version = "0.6.0"
-source = "git+https://github.com/klxdev/eider-rpc.git#48b594bfa3ce0c1a3ab841b883977707dd566d7e"
-hash = "sha256-d561a203085bdbd304869b585f80f65768135942c5cab4239a90dacac9189b95"
+version = "0.7.0"
+source = "git+https://github.com/klxdev/eider-rpc.git#eafbe56220f1d0b475a558abd135eafb4ce8dcdd"
+hash = "sha256-dcac9e24cad57fccb54beca6885461f1ede1b75aa77b06310977e5fbd2fe5eac"
 deps = ["http", "json"]
 grants = ["net", "io", "clock"]
 

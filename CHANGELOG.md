@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+For Eider 0.7 (`eider = "0.7"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.7.0.
 
 - Validation is `@[check(...)]` on the records (eider-lang `std/serial` and `std/validate`):
   `validate.Customer` (the checkout body, now also what `BuyerIn` was), `AddIn`, `QtyIn`,
