@@ -191,7 +191,9 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     buy.set_header("Content-Type", lit("application/json"))
     buy.body = lit("{{\"name\": \"Ada\", \"email\": \"ada@nowhere\"}}")
     let bb = c.request(buy, dl).unwrap()
-    check(inout ck, bb.status == 422 && has(bb.body, "\"pointer\":\"#/email\""), "an invalid email is 422 naming the field")
+    // eider-openapi 0.6 checks `format: email` in the request schema, so a malformed address is
+    // refused there (400, a pointer per violation); the domain rules behind it still answer 422
+    check(inout ck, bb.status == 400 && has(bb.body, "\"pointer\":\"#/email\""), "an invalid email is 400 naming the field")
     buy.body = lit("{{\"name\": \" Ada Lovelace \", \"email\": \"ada@Example.com\"}}")
     let ord = c.request(buy, dl).unwrap()
     check(inout ck, ord.status == 201, "checkout is 201")

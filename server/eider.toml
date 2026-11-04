@@ -2,7 +2,7 @@
 name = "server"
 version = "0.1.0"
 main = "main.ei"
-eider = "0.5"
+eider = "0.6"
 description = "The Eider Shop's server: REST + OpenAPI (eider-openapi), a JSON-RPC admin API (eider-rpc), the front end's files, on eider-http"
 
 # Every dependency is granted exactly what the program loads of it uses, no more; the
@@ -15,23 +15,23 @@ path = "../shared"
 # the request bodies' derived decoders, and reading JSON in the end-to-end test; pure
 [deps.json]
 git = "https://github.com/klxdev/eider-json.git"
-version = "0.5.0"
+version = "0.6.0"
 
 # the server (sockets, deadlines, worker threads), the client of the end-to-end test, and
 # the middleware (access log, metrics)
 [deps.http]
 git = "https://github.com/klxdev/eider-http.git"
-version = "0.5.0"
+version = "0.6.0"
 uses = ["clock", "fs", "io", "net", "threads"]
 
 # operations, validation and /openapi.json: pure, granted nothing
 [deps.openapi]
 git = "https://github.com/klxdev/eider-openapi.git"
-version = "0.5.0"
+version = "0.6.0"
 
 # JSON-RPC 2.0 (the admin API): the server side needs nothing, but the client in the same
 # module uses the network (TODO(eider-rpc#2), eider-lang#60: grants per imported module)
 [deps.rpc]
 git = "https://github.com/klxdev/eider-rpc.git"
-version = "0.5.0"
+version = "0.6.0"
 uses = ["net", "io", "clock"]

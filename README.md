@@ -8,8 +8,8 @@ WebAssembly, so the browser and the server compute the same totals and refuse th
 input with the same messages. The front end is a thin TypeScript layer over a client
 generated from the server's `/openapi.json`.
 
-It is built with the published Eider toolchain (0.5.0, `eider = "0.5"`) and the libraries
-at their v0.5.0 tags: [eider-http](https://github.com/klxdev/eider-http),
+It is built with the published Eider toolchain (0.6.0, `eider = "0.6"`) and the libraries
+at their v0.6.0 tags: [eider-http](https://github.com/klxdev/eider-http),
 [eider-openapi](https://github.com/klxdev/eider-openapi),
 [eider-rpc](https://github.com/klxdev/eider-rpc) and
 [eider-json](https://github.com/klxdev/eider-json). No eider-lang checkout is needed.
@@ -141,7 +141,7 @@ grows are marked `// TODO(<repo>#<n>)` in the code.
 
 ## Running it
 
-Requirements: `eider` with the 0.5 toolchain (from eider-lang's latest release:
+Requirements: `eider` with the 0.6 toolchain (from eider-lang's latest release:
 `sh install.sh --toolchain`), clang 17+ with the wasm32 target and `wasm-ld`, Node 20.19+,
 and a GitHub token with access to the klxdev repositories (`GH_TOKEN`, or `gh auth login`).
 

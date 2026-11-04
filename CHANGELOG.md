@@ -1,14 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
-For Eider 0.6.
+For Eider 0.6 (`eider = "0.6"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.6.0.
 
 - Serialization is opt-in: the records that reach JSON say `@[derive(Serialize)]` or
   `@[derive(Serialize, Deserialize)]`, `Money` implements `serial.Serialize`/`Deserialize`, and
   the attributes are `@[serial(...)]`/`@[json(flatten)]`. `json.to_json`/`from_json` became
   `json.to_bytes`/`to_string`/`from_bytes`. The schemas of the shared records are
   `impl derive.Schematic for ...` in `server/api.ei`.
+- eider-openapi 0.6 checks `format: email` in the request schema, so a malformed address in a
+  checkout is refused there with a 400 and a JSON pointer (it was a 422 from the domain rules); the
+  end-to-end test expects the 400.
 
 ## 0.5.0
 
