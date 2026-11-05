@@ -21,7 +21,7 @@ version = "0.7.0"
 # the middleware (access log, metrics)
 [deps.http]
 git = "https://github.com/klxdev/eider-http.git"
-version = "0.7.0"
+version = "0.7.2"
 uses = ["clock", "fs", "io", "net", "threads"]
 
 # structured logging (the startup and shutdown lines, the access log's Logger): eider-http's
