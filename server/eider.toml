@@ -24,6 +24,13 @@ git = "https://github.com/klxdev/eider-http.git"
 version = "0.7.0"
 uses = ["clock", "fs", "io", "net", "threads"]
 
+# structured logging (the startup and shutdown lines, the access log's Logger): eider-http's
+# middleware takes a logging.Logger
+[deps.logging]
+git = "https://github.com/klxdev/eider-logging.git"
+version = "0.7.0"
+uses = ["io", "clock"]
+
 # operations, validation and /openapi.json: pure, granted nothing
 [deps.openapi]
 git = "https://github.com/klxdev/eider-openapi.git"

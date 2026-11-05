@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Logging is eider-logging (`import logging`, a `[deps.logging]` table in server/eider.toml), not `std/log`, which left std in Eider 0.7.3 (eider-lang#216). eider.lock is re-locked at release against the new eider-http and eider-logging tags.
+
 ## 0.7.0
 
 For Eider 0.7 (`eider = "0.7"`) and eider-http, eider-openapi, eider-rpc and eider-json 0.7.0.

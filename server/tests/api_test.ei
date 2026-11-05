@@ -1,6 +1,6 @@
 // api and assets: problem+json from store errors, encoders, and the static path checks.
 import std.bytes
-import std.log
+import logging
 import std.strings
 import std.testing
 import json
@@ -113,9 +113,9 @@ test "the request schema refuses first (400, a pointer per field), the domain ru
     assert empty.status == 422 && strings.contains(http_testing.text(empty), "the cart is empty")
 }
 
-test "the access record is a std/log line" {
+test "the access record is a logging line" {
     let req = http.request("GET", "/api/products".bytes())
-    let lg = log.new(log.Info).with(log.fields().text("service", String.from("shop")))
+    let lg = logging.new(logging.Info).with(logging.fields().text("service", String.from("shop")))
     let line = text(middleware.access_line(lg, 1761955200000, req, http.response(200), 1500000))
     assert strings.contains(line, "\"msg\":\"request\"") && strings.contains(line, "\"service\":\"shop\"")
 }

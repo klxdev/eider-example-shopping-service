@@ -31,7 +31,7 @@ at their v0.7.0 tags: [eider-http](https://github.com/klxdev/eider-http),
     admin.ei   JSON-RPC admin (eider-rpc)         +-> shop.ts   typed wrapper of the module
     assets.ei  serves web/dist                         main.ts   five views, plain DOM
     app.ei     middleware (eider-http)    <-- HTTP --  api/client.ts  openapi-fetch over
-    main.ei    std/config, std/log, std/service                   api/schema.d.ts, generated from
+    main.ei    std/config, logging, std/service                   api/schema.d.ts, generated from
                                                        `server --openapi`
 ```
 
@@ -109,14 +109,14 @@ JSON and in JavaScript.
   checkout form, looks up coupons and computes the cart's totals in the browser, and shows
   that they match the server's.
 - **A service's basics from std.** `std/config` layers defaults, `SHOP_*` variables and
-  `--flags` (a flag the defaults don't name is an error); `std/log` writes the startup and
+  `--flags` (a flag the defaults don't name is an error); `logging` (eider-logging) writes the startup and
   shutdown lines as JSON; `std/service.cancel_on_term` drains on SIGTERM/SIGINT; `main`
   returns `Result[(), String]`, so a bad setting or a port in use ends the process with
   `error: ...` and status 1 (`server/main.ei`).
 - **JSON-RPC, middleware, operations.** eider-rpc's `rpc/service` for the admin API (`add_json`
   methods over records, mounted as `admin.*`); eider-http's request ids, W3C trace spans
   (`trace.wrap`, written through the service's logger), the access log through the same
-  `std/log` Logger (`access_log_with`), per-route metrics (`by_route`, labelled by operation
+  `logging` Logger (`access_log_with`), per-route metrics (`by_route`, labelled by operation
   id), problem+json for its own 404/405, CORS for the dev server, bearer auth.
 - **Tests in Eider.** `test` blocks for the rules, the store, the API's encoders and the wasm
   module's answers (no `main` needed in a test file), and an end-to-end test of the whole

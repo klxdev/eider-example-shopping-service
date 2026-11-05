@@ -16,7 +16,7 @@
 //                                         http://localhost:5173, the Vite dev server)
 //
 // One JSON access-log line per request and one for its trace span (eider-http) go through
-// the service's std/log logger, like the startup and shutdown lines, on stderr. SIGTERM or SIGINT shuts it down gracefully (std/service):
+// the service's eider-logging logger, like the startup and shutdown lines, on stderr. SIGTERM or SIGINT shuts it down gracefully (std/service):
 // requests in flight finish, then it logs what it served. Plain HTTP only: put it behind a
 // TLS-terminating proxy to expose it.
 
@@ -25,7 +25,7 @@ import std.config
 import std.encoding
 import std.fs
 import std.io
-import std.log
+import logging
 import std.net
 import std.random
 import std.service
@@ -67,13 +67,13 @@ fn main() -> Result[(), String] uses io, fs, net, clock, threads {
         io.outln(svc.document_json())
         return Ok(())
     }
-    let lg = log.new(log.Info).with(log.fields().text("service", String.from("shop")))
+    let lg = logging.new(logging.Info).with(logging.fields().text("service", String.from("shop")))
 
     let srv = server.listen(net.ipv4(127, 0, 0, 1, cfg.port as i32), server.config())?
     let mut token = cfg.admin_token.copy()
     if token.len() == 0 {
         token = encoding.hex(random.bytes(16).unwrap())
-        lg.warn("SHOP_ADMIN_TOKEN is not set; using a random admin token", log.fields().text("admin_token", token.copy()))
+        lg.warn("SHOP_ADMIN_TOKEN is not set; using a random admin token", logging.fields().text("admin_token", token.copy()))
     }
     let mut tokens: List[(List[u8], List[u8])] = List.new()
     tokens.push((token.bytes(), "admin".bytes()))
@@ -84,13 +84,13 @@ fn main() -> Result[(), String] uses io, fs, net, clock, threads {
     let parts = app.Parts(lg, trace.tracer(trace.log_sink(lg)), metrics.by_route(metrics.new()), middleware.random_ids().unwrap(), cors_ok, middleware.token_table(tokens), root, wall_ns)
     let h = app.app(store.store(), parts)
     let addr = sys.to_string(net.text(srv.addr()))
-    lg.info("listening", log.fields().text("addr", addr).text("web", sys.to_string(root.copy())))
+    lg.info("listening", logging.fields().text("addr", addr).text("web", sys.to_string(root.copy())))
 
     // SIGTERM or SIGINT cancels the root token; the server drains and returns
     let tok = task.root()
     let watcher = service.cancel_on_term(tok)?
     let st = srv.serve(h, tok)?
     let signal = watcher.join()
-    lg.info("stopped", log.fields().uint("requests", st.requests as u64).uint("connections", st.connections as u64).int("signal", signal as i64))
+    lg.info("stopped", logging.fields().uint("requests", st.requests as u64).uint("connections", st.connections as u64).int("signal", signal as i64))
     Ok(())
 }

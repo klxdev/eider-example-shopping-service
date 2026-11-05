@@ -3,11 +3,11 @@
 //! files (assets.ei), inside eider-http's middleware.
 //!
 //! Outermost first: request id, trace (a span per request, `traceparent` in and out), access
-//! log (one `std/log` line per request, like the service's own), metrics (per route),
+//! log (one `logging` line per request, like the service's own), metrics (per route),
 //! problem+json for the http package's own errors (the router's 404 and 405), CORS for the
 //! dev front end's origin, then the router.
 
-import std.log
+import logging
 import http
 import http.middleware
 import http.metrics
@@ -23,7 +23,7 @@ import server.assets
 /// the spans, `cors` says which origins may call the API from a browser (the Vite dev
 /// server), `admin` checks the bearer token of /rpc and gives the principal.
 pub type Parts = {
-    log: log.Logger
+    log: logging.Logger
     tracer: trace.Tracer
     metrics: metrics.Metrics
     ids: middleware.Ids

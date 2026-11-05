@@ -15,7 +15,7 @@ import std.bytes
 import std.fs
 import std.io
 import std.net
-import std.log
+import logging
 import std.sync
 import std.task
 import std.time
@@ -117,7 +117,7 @@ fn main() -> i32 uses io, fs, net, clock, threads {
     // here); the spans are collected, one per request
     let empty: List[trace.Span] = List.new()
     let spans = sync.lock(empty)
-    let lg = log.new(log.Error)
+    let lg = logging.new(logging.Error)
     let mut tokens: List[(List[u8], List[u8])] = List.new()
     tokens.push((lit(TOKEN), lit("admin")))
     let parts = app.Parts(lg, trace.tracer(trace.collect(spans)), metrics.by_route(metrics.new()), middleware.ids("req"), middleware.cors_config().allow_origin("http://localhost:5173"), middleware.token_table(tokens), web, fixed_now)
