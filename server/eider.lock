@@ -2,11 +2,19 @@
 version = 1
 
 [[package]]
-name = "http"
+name = "compression"
 version = "0.7.0"
-source = "git+https://github.com/klxdev/eider-http.git#3b857e49c90005af307cd9e96a3b2ca04aa5ad95"
-hash = "sha256-338c54b1079a2427392d273beedf38da738d3d385e4674f139487ded9a2a8e0c"
-deps = ["json"]
+source = "git+https://github.com/klxdev/eider-compression.git#e0dbfa450222556f6367b862a87d0d817f029dde"
+hash = "sha256-e173eba9b07ed2504bfaa19c56e0e0d760d31d4623bc83d8e0c1b3e32bb62c29"
+deps = []
+grants = ["io", "clock"]
+
+[[package]]
+name = "http"
+version = "0.7.2"
+source = "git+https://github.com/klxdev/eider-http.git#135899b0ec8118510d19497824b491cf8aa30002"
+hash = "sha256-7c468f17f6a84418a0b45e4f2ed3311e21f32e99be029ea1f6fe7ac21e5c1ed0"
+deps = ["json", "logging", "compression"]
 grants = ["clock", "fs", "io", "net", "threads"]
 
 [[package]]
@@ -16,6 +24,14 @@ source = "git+https://github.com/klxdev/eider-json.git#aed11befc0110ad3d12c60fdd
 hash = "sha256-06f5196340b683e124a7043031ef7f45327d77ed04bbc464cc26afe420fbf404"
 deps = []
 grants = []
+
+[[package]]
+name = "logging"
+version = "0.7.0"
+source = "git+https://github.com/klxdev/eider-logging.git#e2e8288c3735ffdf706a4e29f71824c83278bcf0"
+hash = "sha256-76ec65bede769ed25a4629fc9b65dfa5161ec4cae0caa63a7f0f7fefcb323bbd"
+deps = []
+grants = ["io", "clock"]
 
 [[package]]
 name = "openapi"
