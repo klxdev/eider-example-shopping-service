@@ -10,11 +10,18 @@ deps = []
 grants = ["io", "clock"]
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+source = "toolchain+packages/crypto"
+deps = []
+grants = ["io"]
+
+[[package]]
 name = "http"
-version = "0.7.2"
-source = "git+https://github.com/klxdev/eider-http.git#135899b0ec8118510d19497824b491cf8aa30002"
-hash = "sha256-7c468f17f6a84418a0b45e4f2ed3311e21f32e99be029ea1f6fe7ac21e5c1ed0"
-deps = ["json", "logging", "compression"]
+version = "0.7.4"
+source = "git+https://github.com/klxdev/eider-http.git#429a3b17de92246f18de6165e516364af96bb08d"
+hash = "sha256-538c890c259103917690f5599dc46e4f3b8cdbec319b582c238ebb68f33a9202"
+deps = ["json", "logging", "compression", "tls", "crypto"]
 grants = ["clock", "fs", "io", "net", "threads"]
 
 [[package]]
@@ -55,3 +62,11 @@ version = "0.1.0"
 source = "path+../shared"
 deps = ["json"]
 grants = []
+
+[[package]]
+name = "tls"
+version = "0.7.2"
+source = "git+https://github.com/klxdev/eider-tls.git#90c7647882c83650e64d26a99f3a04e790a773ae"
+hash = "sha256-312bdac5ef4a8785f66e3a3357164a146b46e21a9cb756b68adbb0368a1243a0"
+deps = ["crypto"]
+grants = ["net", "io", "clock", "fs"]

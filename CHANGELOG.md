@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2
+
+- eider-http 0.7.4 (https and wss, `Content-Encoding`); the lock now holds eider-tls and the toolchain's crypto package, which eider-http depends on. For Eider 0.7.6.
+
 ## 0.7.1
 
 - Logging is eider-logging (`import logging`, a `[deps.logging]` table in server/eider.toml), not `std/log`, which left std in Eider 0.7.3 (eider-lang#216). eider.lock is re-locked at release against the new eider-http and eider-logging tags.
